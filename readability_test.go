@@ -11,12 +11,10 @@ import (
 	"testing"
 )
 
-func TestNewReadability(t *testing.T) {
+func TestParse(t *testing.T) {
 	var r io.Reader
 	{
 		r = strings.NewReader(`
-
-
 <!DOCTYPE HTML>
 <!--suppress ALL -->
 <html class="no-js bg" lang="zh-cmn-Hans">

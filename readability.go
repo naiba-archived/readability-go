@@ -31,6 +31,11 @@ func Parse(r io.Reader, opt Option) (*Readability, error) {
 	if opt.MaxNodeNum > 0 && len(doc.Nodes) > opt.MaxNodeNum {
 		return nil, fmt.Errorf("Node 数量超出最大限制：%d 。 ", opt.MaxNodeNum)
 	}
-	log.Println(doc)
+	doc.Find("script,noscript").Each(func(i int, selection *goquery.Selection) {
+		selection.Nodes[0].Data = "span"
+	})
+	doc.Find("span").Each(func(i int, selection *goquery.Selection) {
+		log.Println(selection.Html())
+	})
 	return nil, nil
 }
