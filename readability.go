@@ -16,6 +16,7 @@ import (
 type Option struct {
 	MaxNodeNum int
 }
+
 //Readability 解析结果
 type Readability struct {
 }
