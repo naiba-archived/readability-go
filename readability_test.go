@@ -6,9 +6,9 @@
 package readability
 
 import (
-	"testing"
 	"io"
 	"strings"
+	"testing"
 )
 
 func TestNewReadability(t *testing.T) {
