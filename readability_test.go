@@ -6,15 +6,14 @@
 package readability
 
 import (
-	"io"
-	"strings"
 	"testing"
 )
 
 func TestParse(t *testing.T) {
-	var r io.Reader
+	var htmlStr string
 	{
-		r = strings.NewReader(`
+	}
+	htmlStr = `
 <!DOCTYPE HTML>
 <!--suppress ALL -->
 <html class="no-js bg" lang="zh-cmn-Hans">
@@ -353,6 +352,14 @@ ga('send', 'pageview');    </script>
    <a class="off-screen-toggle hide"></a>
    <main class="app-content-body ">
     <div class="hbox hbox-auto-xs hbox-auto-sm">
+
+	<!-- 解析测试 -->
+	<div> foo <br> bar <br> <br> abc<br> </div>
+	<div> <font style="xxx">Hello</font> </div>
+	<noscript>test</noscript>
+	<style>.xxx{}</style>
+	<!-- 解析测试 -->
+
     <!--文章-->
      <div class="col center-part">
     <!--标题下的一排功能信息图标：作者/时间/浏览次数/评论数/分类-->
@@ -1013,7 +1020,6 @@ var registCommentEvent = function() {
 </body><!--#body end-->
 </html><!--html end-->
   	<!-- / footer -->
-`)
-	}
-	Parse(r, Option{})
+`
+	Parse(htmlStr, Option{})
 }

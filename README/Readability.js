@@ -401,7 +401,7 @@ Readability.prototype = {
         // 清理 style 标签
         this._removeNodes(doc.getElementsByTagName("style"));
 
-        // 将单个或连续的<br>换成<p>
+        // 将多个连续的<br>换成<p>
         if (doc.body) {
             this._replaceBrs(doc.body);
         }
@@ -426,11 +426,11 @@ Readability.prototype = {
     },
 
     /**
-     * 用一个<p>替换2个或更多个连续的<br>元素, 忽略<br>元素之间的空白。
+     * 用一个<p>替换多个连续的<br>元素, 忽略<br>元素之间的空白。
      * 例如：
      *      <div> foo <br> bar <br> <br> abc<br> </div>
      * 会变成：
-     *      <div>foo<br>bar<p>abc</p></div>
+     *      <div> foo <br>bar<p>abc</p></div>
      */
     _replaceBrs: function (elem) {
         this._forEachNode(this._getAllNodesWithTag(elem, ["br"]), function (br) {
@@ -438,11 +438,13 @@ Readability.prototype = {
 
             // Whether 2 or more <br> elements have been found and replaced with a
             // <p> block.
+            // 当有 2 个或多个 <br> 时替换成 <p>
             var replaced = false;
 
             // If we find a <br> chain, remove the <br>s until we hit another element
             // or non-whitespace. This leaves behind the first <br> in the chain
             // (which will be replaced with a <p> later).
+            // 如果找到了一串相连的 <br>，忽略中间的空格，移除所有相连的 <br>
             while ((next = this._nextElement(next)) && (next.tagName == "BR")) {
                 replaced = true;
                 var brSibling = next.nextSibling;
@@ -453,6 +455,7 @@ Readability.prototype = {
             // If we removed a <br> chain, replace the remaining <br> with a <p>. Add
             // all sibling nodes as children of the <p> until we hit another <br>
             // chain.
+            // 如果移除了 <br> 链，将其余的 <br> 替换为 <p>，将其他相邻节点添加到 <p> 下。直到遇到第二个 <br>
             if (replaced) {
                 var p = this._doc.createElement("p");
                 br.parentNode.replaceChild(p, br);
@@ -460,6 +463,7 @@ Readability.prototype = {
                 next = p.nextSibling;
                 while (next) {
                     // If we've hit another <br><br>, we're done adding children to this <p>.
+                    // 如果我们遇到了其他的 <br><br> 结束添加
                     if (next.tagName == "BR") {
                         var nextElem = this._nextElement(next.nextSibling);
                         if (nextElem && nextElem.tagName == "BR")
@@ -467,6 +471,7 @@ Readability.prototype = {
                     }
 
                     // Otherwise, make this node a child of the new <p>.
+                    // 否则将节点添加为 <p> 的子节点
                     var sibling = next.nextSibling;
                     p.appendChild(next);
                     next = sibling;
