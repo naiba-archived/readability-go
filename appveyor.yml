@@ -21,5 +21,5 @@ test_script:
 
     go list ./... | xargs -L1 golint
 
-    for /f "" %%G in ('go list git.cm/naiba/go-readability/...') do ( go test %%G & IF ERRORLEVEL == 1 EXIT 1)
+    for /f "" %%G in ('go list git.cm/naiba/go-readability/...') do ( go test -v %%G & IF ERRORLEVEL == 1 EXIT 1)
 deploy: off
