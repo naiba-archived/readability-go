@@ -1,6 +1,6 @@
 # Readability 网页正文提取
 
-[![Go Report Card](https://goreportcard.com/badge/git.cm/naiba/go-readability)](https://goreportcard.com/report/git.cm/naiba/go-readability)  [![Build status](https://ci.appveyor.com/api/projects/status/b9fip6nledutbnn4?svg=true)](https://ci.appveyor.com/project/naiba/go-readability)
+[![Go Report Card](https://goreportcard.com/badge/git.cm/naiba/go-readability)](https://goreportcard.com/report/git.cm/naiba/go-readability)  [![Build status](https://ci.appveyor.com/api/projects/status/28d8a25yts51nor5?svg=true)](https://ci.appveyor.com/project/naiba/go-readability)
 
 **Readability** 网页正文提取算法的 Golang 实现。
 

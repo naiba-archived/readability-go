@@ -8,10 +8,10 @@ package readability
 import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
-	"strings"
 	"golang.org/x/net/html"
-	"regexp"
 	"log"
+	"regexp"
+	"strings"
 )
 
 var (
