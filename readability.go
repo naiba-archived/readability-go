@@ -10,6 +10,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 	"log"
+	"math"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -42,8 +43,10 @@ var (
 		"select":     0,
 	}
 	bylinePattern               = regexp.MustCompile(`byline|author|dateline|writtenby|p-author`)
-	okMaybeItsACandidatePattern = regexp.MustCompile(`and|article|body|column|main|shadow|app|container`)
+	okMaybeItsACandidatePattern = regexp.MustCompile(`and|article|body|column|main|shadow`)
 	unlikelyCandidatesPattern   = regexp.MustCompile(`banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
+	negativePattern             = regexp.MustCompile(`hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
+	positivePattern             = regexp.MustCompile(`article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
 	option                      = new(Option)
 	flags                       = flagCleanConditionally | flagStripUnlikely | flagWeightClasses
 )
@@ -68,14 +71,25 @@ type Metadata struct {
 	Byline  string
 }
 
-//Readability 解析结果
-type Readability struct {
+//Article 解析结果
+type Article struct {
 	Title  string
 	Byline string
 }
 
+//Readability 节点评分
+type Readability struct {
+	ContentScore int
+}
+
+//ScoreSelection 可评分节点
+type ScoreSelection struct {
+	*goquery.Selection
+	Readability *Readability
+}
+
 //Parse 进行解析
-func Parse(s string, opt Option) (*Readability, error) {
+func Parse(s string, opt Option) (*Article, error) {
 	d, err := goquery.NewDocumentFromReader(strings.NewReader(s))
 	if err != nil {
 		return nil, err
@@ -85,7 +99,7 @@ func Parse(s string, opt Option) (*Readability, error) {
 	if opt.MaxNodeNum > 0 && len(d.Nodes) > opt.MaxNodeNum {
 		return nil, fmt.Errorf("Node 数量超出最大限制：%d 。 ", opt.MaxNodeNum)
 	}
-	article := new(Readability)
+	article := new(Article)
 	// 预处理HTML文档以提高可读性。 这包括剥离JavaScript，CSS和处理没用的标记等内容。
 	prepDocument(d)
 
@@ -94,13 +108,13 @@ func Parse(s string, opt Option) (*Readability, error) {
 	article.Title = md.Title
 
 	//todo 提取文章正文
-	getArticle(d)
+	grabArticle(d)
 
 	return article, nil
 }
 
 // 提取文章正文
-func getArticle(d *goquery.Document) *goquery.Selection {
+func grabArticle(d *goquery.Document) *goquery.Selection {
 	page := d.Find("body").First().Children()
 	if page.Length() == 0 {
 		l("getArticle", "没有 body，哪里来的正文？")
@@ -128,7 +142,7 @@ func getArticle(d *goquery.Document) *goquery.Selection {
 				!okMaybeItsACandidatePattern.MatchString(matchString) &&
 				node.Data != "body" &&
 				node.Data != "a" {
-				l("getArticle", "垃圾标签", "清除")
+				l("getArticle", "垃圾标签", "清除", matchString)
 				sel = removeAndGetNext(sel)
 				continue
 			}
@@ -180,9 +194,146 @@ func getArticle(d *goquery.Document) *goquery.Selection {
 	* 然后将他们的分数添加到他们的父节点。
 	* 分数由 commas，class 名称 等的 数目决定。也许最终链接密度。
 	**/
-	l("selectionsToScore 长度", len(selectionsToScore))
+	l("selectionsToScore 长度", len(selectionsToScore), selectionsToScore)
+	candidates := make([]*ScoreSelection, 0)
+	for _, sel = range selectionsToScore {
+		// 节点或节点的父节点为空，跳过
+		if sel.Parent().Length() == 0 || sel.Length() == 0 {
+			continue
+		}
+		// 如果该段落少于25个字符，跳过
+		if utf8.RuneCountInString(sel.Text()) < 25 {
+			continue
+		}
+		// 排除没有祖先的节点。
+		ancestors := getSelectionAncestors(sel, 3)
+		if len(ancestors) == 0 {
+			continue
+		}
+
+		contentScore := 0
+
+		// 为段落本身添加一个基础分
+		contentScore++
+
+		innerText := sel.Text()
+		// 在此段落内为所有逗号添加分数。
+		contentScore += strings.Count(innerText, ",")
+		contentScore += strings.Count(innerText, "，")
+
+		// 本段中每100个字符添加一分。 最多3分。
+		contentScore += int(math.Min(float64(utf8.RuneCountInString(innerText)/100), 3))
+
+		// 给祖先初始化并评分。
+		for level, ancestor := range ancestors {
+			if ancestor.Length() == 0 {
+				continue
+			}
+			if ancestor.Readability.ContentScore == 0 {
+				// 初始化节点分数
+				initializeScoreSelection(ancestor)
+				candidates = append(candidates, ancestor)
+			}
+			// 节点加分规则：
+			// - 父母：1（不划分）
+			// - 祖父母：2
+			// - 祖父母：祖先等级* 3
+			divider := 1
+			switch level {
+			case 0:
+				divider = 1
+				break
+			case 1:
+				divider = 2
+				break
+			case 2:
+				divider = level * 3
+				break
+			}
+			ancestor.Readability.ContentScore += contentScore / divider
+		}
+	}
+
+	//todo 获取评分最高节点
 
 	return nil
+}
+
+// 初始化节点分数
+func initializeScoreSelection(s *ScoreSelection) {
+	switch s.Get(0).Data {
+	case "div":
+		s.Readability.ContentScore += 5
+		break
+	case "pre":
+	case "td":
+	case "blockquote":
+		s.Readability.ContentScore += 3
+		break
+	case "address":
+	case "ol":
+	case "ul":
+	case "dl":
+	case "dd":
+	case "dt":
+	case "li":
+	case "form":
+		s.Readability.ContentScore -= 3
+		break
+	case "h1":
+	case "h2":
+	case "h3":
+	case "h4":
+	case "h5":
+	case "h6":
+	case "th":
+		s.Readability.ContentScore -= 5
+		break
+	}
+	// 获取元素类/标识权重。 使用正则表达式来判断这个元素是好还是坏。
+	getClassWeight(s)
+}
+
+// 获取元素类/标识权重。 使用正则表达式来判断这个元素是好还是坏。
+func getClassWeight(s *ScoreSelection) {
+	if !flagIsActive(flagWeightClasses) {
+		return
+	}
+	// 寻找一个特殊的类名
+	className, has := s.Attr("class")
+	if has && len(className) > 0 {
+		if negativePattern.MatchString(className) {
+			s.Readability.ContentScore -= 25
+		}
+		if positivePattern.MatchString(className) {
+			s.Readability.ContentScore += 25
+		}
+	}
+	// 寻找一个特殊的ID
+	id, has := s.Attr("id")
+	if has && len(className) > 0 {
+		if negativePattern.MatchString(id) {
+			s.Readability.ContentScore -= 25
+		}
+		if positivePattern.MatchString(id) {
+			s.Readability.ContentScore += 25
+		}
+	}
+}
+
+// 向上获取祖先节点
+func getSelectionAncestors(s *goquery.Selection, i int) []*ScoreSelection {
+	ancestors := make([]*ScoreSelection, 0)
+	count := 0
+	for s.Parent().Length() > 0 {
+		count++
+		s = s.Parent()
+		ancestors = append(ancestors, &ScoreSelection{s, &Readability{}})
+		if i > 0 && i == count {
+			return ancestors
+		}
+	}
+	return ancestors
 }
 
 // 节点是否含有块级元素
@@ -266,7 +417,7 @@ func checkByline(s *goquery.Selection, matchString string) bool {
 		return false
 	}
 	innerText := s.Text()
-	if s.AttrOr("rel", "") == "author" || bylinePattern.MatchString(matchString) && isValidByline(innerText) {
+	if (s.AttrOr("rel", "") == "author" || bylinePattern.MatchString(matchString)) && isValidByline(innerText) {
 		option.ArticleByline = ts(innerText)
 		return true
 	}
@@ -276,7 +427,7 @@ func checkByline(s *goquery.Selection, matchString string) bool {
 // 合理的作者信息行
 func isValidByline(line string) bool {
 	length := utf8.RuneCountInString(ts(line))
-	return length > 10 && length < 100
+	return length > 0 && length < 100
 }
 
 // 是否启用

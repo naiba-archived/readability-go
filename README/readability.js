@@ -855,15 +855,19 @@ Readability.prototype = {
                 var contentScore = 0;
 
                 // Add a point for the paragraph itself as a base.
+                // 为段落本身添加一个基础分
                 contentScore += 1;
 
                 // Add points for any commas within this paragraph.
+                // 在此段落内为所有逗号添加分数。
                 contentScore += innerText.split(',').length;
 
                 // For every 100 characters in this paragraph, add another point. Up to 3 points.
+                // 本段中每100个字符添加一分。 最多3分。
                 contentScore += Math.min(Math.floor(innerText.length / 100), 3);
 
                 // Initialize and score ancestors.
+                // 给祖先初始化并评分。
                 this._forEachNode(ancestors, function (ancestor, level) {
                     if (!ancestor.tagName)
                         return;
@@ -877,6 +881,10 @@ Readability.prototype = {
                     // - parent:             1 (no division)
                     // - grandparent:        2
                     // - great grandparent+: ancestor level * 3
+                    // 节点加分规则：
+                    // - 父母：1（不划分）
+                    // - 祖父母：2
+                    // - 祖父母：祖先等级* 3
                     if (level === 0)
                         var scoreDivider = 1;
                     else if (level === 1)
@@ -1392,6 +1400,7 @@ Readability.prototype = {
         var weight = 0;
 
         // Look for a special classname
+        // 寻找一个特殊的类名
         if (typeof(e.className) === 'string' && e.className !== '') {
             if (this.REGEXPS.negative.test(e.className))
                 weight -= 25;
@@ -1401,6 +1410,7 @@ Readability.prototype = {
         }
 
         // Look for a special ID
+        // 寻找一个特殊的ID
         if (typeof(e.id) === 'string' && e.id !== '') {
             if (this.REGEXPS.negative.test(e.id))
                 weight -= 25;

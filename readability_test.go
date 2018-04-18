@@ -6,8 +6,8 @@
 package readability
 
 import (
-	"testing"
 	"io/ioutil"
+	"testing"
 )
 
 func TestParse(t *testing.T) {
