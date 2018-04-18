@@ -9,19 +9,43 @@ import (
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
+	"log"
 	"regexp"
 	"strings"
-	"log"
 	"unicode/utf8"
 )
 
 var (
-	whitespacePattern = regexp.MustCompile(`^\s*$`)
+	whitespacePattern  = regexp.MustCompile(`^\s*$`)
+	defaultTagsToScore = map[string]int{
+		"section": 0,
+		"h2":      0,
+		"h3":      0,
+		"h4":      0,
+		"h5":      0,
+		"h6":      0,
+		"p":       0,
+		"td":      0,
+		"pre":     0,
+	}
+	bylinePattern               = regexp.MustCompile(`byline|author|dateline|writtenby|p-author`)
+	okMaybeItsACandidatePattern = regexp.MustCompile(`and|article|body|column|main|shadow|app|container`)
+	unlikelyCandidatesPattern   = regexp.MustCompile(`banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
+	option                      = new(Option)
+	flags                       = flagCleanConditionally | flagStripUnlikely | flagWeightClasses
+)
+
+const (
+	flagStripUnlikely      = 0x1
+	flagWeightClasses      = 0x2
+	flagCleanConditionally = 0x4
 )
 
 //Option 解析配置
 type Option struct {
-	MaxNodeNum int
+	MaxNodeNum    int
+	Debug         bool
+	ArticleByline string
 }
 
 //Metadata 文章摘要信息
@@ -33,6 +57,8 @@ type Metadata struct {
 
 //Readability 解析结果
 type Readability struct {
+	Title  string
+	Byline string
 }
 
 //Parse 进行解析
@@ -41,21 +67,156 @@ func Parse(s string, opt Option) (*Readability, error) {
 	if err != nil {
 		return nil, err
 	}
+	option = &opt
 	// 超出最大解析限制
 	if opt.MaxNodeNum > 0 && len(d.Nodes) > opt.MaxNodeNum {
 		return nil, fmt.Errorf("Node 数量超出最大限制：%d 。 ", opt.MaxNodeNum)
 	}
+	article := new(Readability)
 	// 预处理HTML文档以提高可读性。 这包括剥离JavaScript，CSS和处理没用的标记等内容。
 	prepDocument(d)
 
-	//todo 从 metadata 尝试获取文章的摘要和作者信息
+	// 获取文章的摘要和作者信息
 	md := getArticleMetadata(d)
-	log.Println(md)
+	article.Title = md.Title
 
-	return nil, nil
+	//todo 提取文章正文
+	getArticle(d)
+
+	return article, nil
 }
 
-// 从 metadata 尝试获取文章的摘要和作者信息
+// 提取文章正文
+func getArticle(d *goquery.Document) *goquery.Selection {
+	page := d.Find("body").First().Children()
+	if page.Length() == 0 {
+		l("getArticle", "没有 body，哪里来的正文？")
+		return nil
+	}
+	stripUnlikelyCandidates := flagIsActive(flagStripUnlikely)
+	selectionsToScore := make([]*goquery.Selection, 0)
+	sel := page.First()
+	for sel != nil {
+		node := sel.Get(0)
+		// 首先，节点预处理。 清理看起来很糟糕的垃圾节点（比如类名为“comment”的垃圾节点），
+		// 并将div转换为P标签，清理空节点。
+		matchString, _ := sel.Attr("id")
+		class, _ := sel.Attr("class")
+		matchString += " " + class
+		// 作者信息行
+		if checkByline(sel, matchString) {
+			l("getArticle", "作者信息", "清除")
+			sel = removeAndGetNext(sel)
+			continue
+		}
+		// 清理垃圾标签
+		if stripUnlikelyCandidates {
+			if unlikelyCandidatesPattern.MatchString(matchString) &&
+				!okMaybeItsACandidatePattern.MatchString(matchString) &&
+				node.Data != "body" &&
+				node.Data != "a" {
+				l("getArticle", "垃圾标签", "清除")
+				sel = removeAndGetNext(sel)
+				continue
+			}
+		}
+		// 清理不含任何内容的 DIV, SECTION, 和 HEADER
+		tags := map[string]int{"div": 0, "section": 0, "header": 0, "h1": 0, "h2": 0, "h3": 0, "h4": 0, "h5": 0, "h6": 0}
+		if _, has := tags[node.Data]; has && len(ts(sel.Text())) == 0 {
+			l("getArticle", "清理空块级元素", "清除")
+			sel = removeAndGetNext(sel)
+			continue
+		}
+		// 内容标签，加分项
+		if _, has := defaultTagsToScore[node.Data]; has {
+			selectionsToScore = append(selectionsToScore, sel)
+		}
+		// 将所有没有 children 的 div 转换为 p
+		if node.Data == "div" {
+			// 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
+
+		}
+
+		sel = getNextSelection(sel, false)
+	}
+	return nil
+}
+
+// 删除并获取下一个
+func removeAndGetNext(s *goquery.Selection) *goquery.Selection {
+	l("removeAndGetNext", s.Get(0))
+	t := getNextSelection(s, true)
+	s.Remove()
+	return t
+}
+
+/*
+ * 从 node 开始遍历DOM，
+ * 如果 ignoreSelfAndKids 为 true 则不遍历子 element
+ * 改为遍历 兄弟 和 父级兄弟 element
+ */
+func getNextSelection(s *goquery.Selection, ignoreSelfAndChildren bool) *goquery.Selection {
+	if s.Length() == 0 {
+		l("getNextSelection", "空空如也😂")
+		return nil
+	}
+	// 如果 ignoreSelfAndKids 不为 true 且 node 有子 element 返回第一个子 element
+	if !ignoreSelfAndChildren && s.Children().Length() > 0 {
+		t := s.Children().First()
+		if t.Length() > 0 {
+			l("getNextSelection", "儿子", t.Get(0))
+			return t
+		}
+	}
+	// 然后是兄弟 element
+	if s.Next().Length() > 0 {
+		l("getNextSelection", "兄弟", s.Next().Get(0))
+		return s.Next()
+	}
+	// 最后，父节点的兄弟 element
+	//（因为这是深度优先遍历，我们已经遍历了父节点本身）。
+	for {
+		s = s.Parent()
+		t := s.Next()
+		if t.Length() == 0 {
+			if s.Parent().Length() > 0 {
+				continue
+			}
+			break
+		} else {
+			l("getNextSelection", "父兄", t.Get(0))
+			return t
+		}
+	}
+	l("getNextSelection", "遍历完毕😂")
+	return nil
+}
+
+// 是否是作者信息
+func checkByline(s *goquery.Selection, matchString string) bool {
+	if len(option.ArticleByline) > 0 {
+		return false
+	}
+	innerText := s.Text()
+	if s.AttrOr("rel", "") == "author" || bylinePattern.MatchString(matchString) && isValidByline(innerText) {
+		option.ArticleByline = ts(innerText)
+		return true
+	}
+	return false
+}
+
+// 合理的作者信息行
+func isValidByline(line string) bool {
+	length := utf8.RuneCountInString(ts(line))
+	return length > 10 && length < 100
+}
+
+// 是否启用
+func flagIsActive(flag int) bool {
+	return flags&flag > 0
+}
+
+// 从 metadata 获取文章的摘要和作者信息
 func getArticleMetadata(d *goquery.Document) Metadata {
 	var md Metadata
 	values := make(map[string]string)
@@ -83,7 +244,7 @@ func getArticleMetadata(d *goquery.Document) Metadata {
 			elementContent, _ := s.Attr("content")
 			if len(elementContent) > 0 {
 				name = whitespacePattern.ReplaceAllString(strings.ToLower(name), " ")
-				values["name"] = strings.TrimSpace(elementContent)
+				values["name"] = ts(elementContent)
 			}
 		}
 
@@ -107,7 +268,7 @@ func getArticleMetadata(d *goquery.Document) Metadata {
 			md.Title = val
 		}
 	}
-	
+
 	return md
 }
 
@@ -118,7 +279,7 @@ func getArticleTitle(d *goquery.Document) string {
 
 	// 从 title 标签获取标题
 	elementTitle := d.Find("title").First()
-	originTitle = strings.TrimSpace(elementTitle.Text())
+	originTitle = ts(elementTitle.Text())
 	title = originTitle
 
 	hasSplit := titleSplitPattern.MatchString(title)
@@ -133,7 +294,7 @@ func getArticleTitle(d *goquery.Document) string {
 		flag := false
 		d.Find("h1,h2").EachWithBreak(func(i int, s *goquery.Selection) bool {
 			// 提取的标题是否在正文中存在
-			if strings.TrimSpace(s.Text()) == title {
+			if ts(s.Text()) == title {
 				flag = true
 			}
 			return !flag
@@ -143,23 +304,25 @@ func getArticleTitle(d *goquery.Document) string {
 			i := strings.LastIndex(originTitle, "：")
 			if i == -1 {
 				i = strings.LastIndex(originTitle, ":")
-			}
-			title = originTitle[i:]
-			if utf8.RuneCountInString(title) < 3 {
-				i = strings.Index(originTitle, "：")
-				if i == -1 {
-					i = strings.Index(originTitle, ":")
-				}
+			} else {
 				title = originTitle[i:]
-			} else if utf8.RuneCountInString(originTitle[0:i]) > 5 {
-				title = originTitle
+				if utf8.RuneCountInString(title) < 3 {
+					i = strings.Index(originTitle, "：")
+					if i == -1 {
+						i = strings.Index(originTitle, ":")
+					} else {
+						title = originTitle[i:]
+					}
+				} else if utf8.RuneCountInString(originTitle[0:i]) > 5 {
+					title = originTitle
+				}
 			}
 		}
 	} else if utf8.RuneCountInString(title) > 150 || utf8.RuneCountInString(title) < 15 {
 		// 如果标题字数很离谱切只有一个h1标签，取其文字
 		h1s := d.Find("h1")
 		if h1s.Length() == 1 {
-			title = strings.TrimSpace(h1s.First().Text())
+			title = ts(h1s.First().Text())
 		}
 	}
 
@@ -198,9 +361,9 @@ func replaceBrs(d *goquery.Document) {
 		next := nextElement(br.Get(0).NextSibling)
 		for next != nil && next.Data == "br" {
 			replaced = true
-			temp := next.NextSibling
+			t := nextElement(next.NextSibling)
 			next.Parent.RemoveChild(next)
-			next = nextElement(temp)
+			next = t
 		}
 
 		// 如果移除了 <br> 链，将其余的 <br> 替换为 <p>，将其他相邻节点添加到 <p> 下。直到遇到第二个 <br>
@@ -235,8 +398,9 @@ func replaceBrs(d *goquery.Document) {
 // 获取下一个Element
 func nextElement(n *html.Node) *html.Node {
 	for n != nil &&
-		n.Type != html.ElementNode &&
-		whitespacePattern.MatchString(n.Data) {
+		n.Type != html.ElementNode && (whitespacePattern.MatchString(n.Data) ||
+		n.Type == html.CommentNode) {
+		l("nextElement", n)
 		n = n.NextSibling
 	}
 	return n
@@ -256,4 +420,16 @@ func replaceSelectionTags(s *goquery.Selection, tag string) {
 		is.Get(0).Data = tag
 		is.Get(0).Namespace = tag
 	})
+}
+
+// 调试日志
+func l(ms ...interface{}) {
+	if option.Debug {
+		log.Println(ms...)
+	}
+}
+
+// TrimSpace
+func ts(s string) string {
+	return strings.TrimSpace(s)
 }

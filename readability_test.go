@@ -12,8 +12,7 @@ import (
 func TestParse(t *testing.T) {
 	var htmlStr string
 	{
-	}
-	htmlStr = `
+		htmlStr = `
 <!DOCTYPE HTML>
 <!--suppress ALL -->
 <html class="no-js bg" lang="zh-cmn-Hans">
@@ -1021,5 +1020,7 @@ var registCommentEvent = function() {
 </html><!--html end-->
   	<!-- / footer -->
 `
-	Parse(htmlStr, Option{})
+	}
+	//htmlStr = ""
+	Parse(htmlStr, Option{Debug: true})
 }

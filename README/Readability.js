@@ -653,7 +653,7 @@ Readability.prototype = {
             return node.nextElementSibling;
         }
         // 最后，父节点的兄弟 element
-        //（因为这是深度优先遍历，我们已经看到了父节点本身）。
+        //（因为这是深度优先遍历，我们已经遍历了父节点本身）。
         do {
             node = node.parentNode;
         } while (node && !node.nextElementSibling);
@@ -758,7 +758,7 @@ Readability.prototype = {
                 var matchString = node.className + " " + node.id;
 
                 // Check to see if this node is a byline, and remove it if it is.
-                // 如果是 byline node，删除并将指针移到下一个 node
+                // 如果是作者信息 node，删除并将指针移到下一个 node
                 if (this._checkByline(node, matchString)) {
                     node = this._removeAndGetNext(node);
                     continue;
@@ -1754,11 +1754,11 @@ Readability.prototype = {
         // 预处理
         this._prepDocument();
 
-        // 从 metadata 尝试获取文章的摘要和作者信息
+        // 从 metadata 获取文章的摘要和作者信息
         var metadata = this._getArticleMetadata();
         this._articleTitle = metadata.title;
 
-        // 提取文章主体
+        // 提取文章正文
         var articleContent = this._grabArticle();
         if (!articleContent)
             return null;
