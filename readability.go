@@ -28,6 +28,19 @@ var (
 		"td":      0,
 		"pre":     0,
 	}
+	divToPElement = map[string]int{
+		"a":          0,
+		"blockquote": 0,
+		"dl":         0,
+		"div":        0,
+		"img":        0,
+		"ol":         0,
+		"p":          0,
+		"pre":        0,
+		"table":      0,
+		"ul":         0,
+		"select":     0,
+	}
 	bylinePattern               = regexp.MustCompile(`byline|author|dateline|writtenby|p-author`)
 	okMaybeItsACandidatePattern = regexp.MustCompile(`and|article|body|column|main|shadow|app|container`)
 	unlikelyCandidatesPattern   = regexp.MustCompile(`banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
@@ -131,15 +144,70 @@ func getArticle(d *goquery.Document) *goquery.Selection {
 		if _, has := defaultTagsToScore[node.Data]; has {
 			selectionsToScore = append(selectionsToScore, sel)
 		}
-		// 将所有没有 children 的 div 转换为 p
 		if node.Data == "div" {
 			// 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
-
+			if hasSinglePInsideElement(sel) {
+				l(" -------------- hasSinglePInsideElement START  --------------")
+				l(sel.Html())
+				l(" -------------- hasSinglePInsideElement  END  --------------")
+				sel.ReplaceWithSelection(sel.Children())
+				selectionsToScore = append(selectionsToScore, sel)
+			}
+		} else if !hasChildBlockElement(sel) {
+			// 节点是否含有块级元素
+			sel.Get(0).Data = "p"
+			sel.Get(0).Namespace = "p"
+			selectionsToScore = append(selectionsToScore, sel)
+		} else {
+			// 含有块级元素
+			sel.Children().Each(func(i int, s *goquery.Selection) {
+				if len(ts(s.Text())) > 0 {
+					p := s.Get(0)
+					p.Data = "p"
+					p.Namespace = "p"
+					p.Attr = make([]html.Attribute, 0)
+					s.SetAttr("class", "readability-styled")
+					s.SetAttr("style", "display:inline;")
+				}
+			})
 		}
 
 		sel = getNextSelection(sel, false)
 	}
+
+	/*
+	* 循环浏览所有段落，并根据它们的外观如何分配给他们一个分数。
+	* 然后将他们的分数添加到他们的父节点。
+	* 分数由 commas，class 名称 等的 数目决定。也许最终链接密度。
+	**/
+	l("selectionsToScore 长度", len(selectionsToScore))
+
 	return nil
+}
+
+// 节点是否含有块级元素
+func hasChildBlockElement(s *goquery.Selection) bool {
+	flag := false
+	s.Children().EachWithBreak(func(i int, is *goquery.Selection) bool {
+		innerFlag := false
+		if _, has := divToPElement[is.Get(0).Data]; has {
+			innerFlag = true
+		}
+		if hasChildBlockElement(is) || innerFlag {
+			flag = true
+			return true
+		}
+		return false
+	})
+	return flag
+}
+
+// 是不是只包含一个 p 标签的节点
+func hasSinglePInsideElement(s *goquery.Selection) bool {
+	if s.Children().Length() != 1 || s.Children().Get(0).Data != "p" {
+		return false
+	}
+	return ts(s.Children().Text()) == ts(s.Text())
 }
 
 // 删除并获取下一个
@@ -221,8 +289,8 @@ func getArticleMetadata(d *goquery.Document) Metadata {
 	var md Metadata
 	values := make(map[string]string)
 
-	namePattern := regexp.MustCompile(`/^\s*((twitter)\s*:\s*)?(description|title)\s*$/gi`)
-	propertyPattern := regexp.MustCompile(`/^\s*((twitter)\s*:\s*)?(description|title)\s*$/gi`)
+	namePattern := regexp.MustCompile(`^\s*((twitter)\s*:\s*)?(description|title)\s*$`)
+	propertyPattern := regexp.MustCompile(`^\s*og\s*:\s*(description|title)\s*$`)
 
 	// 提取元数据
 	d.Find("meta").Each(func(i int, s *goquery.Selection) {
@@ -244,10 +312,9 @@ func getArticleMetadata(d *goquery.Document) Metadata {
 			elementContent, _ := s.Attr("content")
 			if len(elementContent) > 0 {
 				name = whitespacePattern.ReplaceAllString(strings.ToLower(name), " ")
-				values["name"] = ts(elementContent)
+				values[name] = ts(elementContent)
 			}
 		}
-
 	})
 
 	// 取文章摘要

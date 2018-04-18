@@ -1744,6 +1744,7 @@ Readability.prototype = {
                 throw new Error("Aborting parsing document; " + numTags + " elements found");
             }
         }
+
         // 网页的第一个子 Element
         if (typeof this._doc.documentElement.firstElementChild === "undefined") {
             this._getNextNode = this._getNextNodeNoElementProperties;
