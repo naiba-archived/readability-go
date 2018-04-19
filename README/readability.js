@@ -98,7 +98,7 @@ Readability.prototype = {
     // Defined up here so we don't instantiate them repeatedly in loops.
     REGEXPS: {
         unlikelyCandidates: /banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote/i,
-        okMaybeItsACandidate: /and|article|body|column|main|shadow/i,
+        okMaybeItsACandidate: /and|article|body|column|main|shadow|app|container/i,
         positive: /article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story/i,
         negative: /hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget/i,
         extraneous: /print|archive|comment|discuss|e[\-]?mail|share|reply|all|login|sign|single|utility/i,
@@ -760,13 +760,14 @@ Readability.prototype = {
                 // Check to see if this node is a byline, and remove it if it is.
                 // 如果是作者信息 node，删除并将指针移到下一个 node
                 if (this._checkByline(node, matchString)) {
+                    this.log("checkByline",node,matchString)
                     node = this._removeAndGetNext(node);
                     continue;
                 }
 
                 // Remove unlikely candidates
                 // 清理垃圾标签
-                if (stripUnlikelyCandidates) {
+                if (stripUnlikelyCandidates && matchString.trim().length>0) {
                     if (this.REGEXPS.unlikelyCandidates.test(matchString) &&
                         !this.REGEXPS.okMaybeItsACandidate.test(matchString) &&
                         node.tagName !== "BODY" &&
@@ -897,6 +898,7 @@ Readability.prototype = {
 
             // After we've calculated scores, loop through all of the possible
             // candidate nodes we found and find the one with the highest score.
+            // 在我们计算出分数后，循环遍历我们找到的所有可能的候选节点，并找到分数最高的候选节点。
             var topCandidates = [];
             for (var c = 0, cl = candidates.length; c < cl; c += 1) {
                 var candidate = candidates[c];
@@ -904,6 +906,7 @@ Readability.prototype = {
                 // Scale the final candidates score based on link density. Good content
                 // should have a relatively small link density (5% or less) and be mostly
                 // unaffected by this operation.
+                // 根据链接密度缩放最终候选人分数。 良好的内容应该有一个相对较小的链接密度（5％或更少），并且大多不受此操作的影响。
                 var candidateScore = candidate.readability.contentScore * (1 - this._getLinkDensity(candidate));
                 candidate.readability.contentScore = candidateScore;
 
@@ -927,24 +930,29 @@ Readability.prototype = {
 
             // If we still have no top candidate, just use the body as a last resort.
             // We also have to copy the body node so it is something we can modify.
+            // 如果我们还没有topCandidate，那就把 body 作为 topCandidate。
+            // 我们还必须复制body节点，以便我们可以修改它。
             if (topCandidate === null || topCandidate.tagName === "BODY") {
                 // Move all of the page's children into topCandidate
+                // 将所有页面的子项移到topCandidate中
                 topCandidate = doc.createElement("DIV");
                 neededToCreateTopCandidate = true;
                 // Move everything (not just elements, also text nodes etc.) into the container
                 // so we even include text directly in the body:
+                // 将所有内容（不仅仅是元素，也包括文本节点等）移动到容器中，因此我们甚至直接在文本中包含文本：
                 var kids = page.childNodes;
                 while (kids.length) {
                     this.log("Moving child out:", kids[0]);
                     topCandidate.appendChild(kids[0]);
                 }
-
                 page.appendChild(topCandidate);
 
                 this._initializeNode(topCandidate);
             } else if (topCandidate) {
                 // Find a better top candidate node if it contains (at least three) nodes which belong to `topCandidates` array
                 // and whose scores are quite closed with current `topCandidate` node.
+                // 如果它包含（至少三个）属于topCandidates数组并且其分数与
+                // 当前topCandidate节点非常接近的节点，则找到一个更好的顶级候选节点。
                 var alternativeCandidateAncestors = [];
                 for (var i = 1; i < topCandidates.length; i++) {
                     if (topCandidates[i].readability.contentScore / topCandidate.readability.contentScore >= 0.75) {
@@ -977,9 +985,14 @@ Readability.prototype = {
                 // lurking in other places that we want to unify in. The sibling stuff
                 // below does some of that - but only if we've looked high enough up the DOM
                 // tree.
+                // 由于我们的奖金制度，节点的父节点可能会有自己的分数。 他们得到节点的一半。 不会有比我们的
+                // topCandidate分数更高的节点，但是如果我们在树的前几个步骤中看到分数增加，这是一个体面
+                // 的信号，可能会有更多的内容潜伏在我们想要的其他地方 统一英寸下面的兄弟姐妹的东西做了一些
+                // - 但只有当我们已经足够高的DOM树。
                 parentOfTopCandidate = topCandidate.parentNode;
                 var lastScore = topCandidate.readability.contentScore;
                 // The scores shouldn't get too low.
+                // 分数不能太低。
                 var scoreThreshold = lastScore / 3;
                 while (parentOfTopCandidate.tagName !== "BODY") {
                     if (!parentOfTopCandidate.readability) {
@@ -991,6 +1004,7 @@ Readability.prototype = {
                         break;
                     if (parentScore > lastScore) {
                         // Alright! We found a better parent to use.
+                        // 找到了一个更好的节点
                         topCandidate = parentOfTopCandidate;
                         break;
                     }
@@ -1000,6 +1014,7 @@ Readability.prototype = {
 
                 // If the top candidate is the only child, use parent instead. This will help sibling
                 // joining logic when adjacent content is actually located in parent's sibling node.
+                // 如果最上面的候选人是唯一的孩子，那就用父母代替。 当相邻内容实际位于父节点的兄弟节点中时，这将有助于兄弟连接逻辑。
                 parentOfTopCandidate = topCandidate.parentNode;
                 while (parentOfTopCandidate.tagName != "BODY" && parentOfTopCandidate.children.length == 1) {
                     topCandidate = parentOfTopCandidate;
@@ -1013,12 +1028,14 @@ Readability.prototype = {
             // Now that we have the top candidate, look through its siblings for content
             // that might also be related. Things like preambles, content split by ads
             // that we removed, etc.
+            // 现在我们有了最好的候选人，通过它的兄弟姐妹查看可能也有关联的内容。 诸如前导，内容被我们删除的广告分割等
             var articleContent = doc.createElement("DIV");
             if (isPaging)
                 articleContent.id = "readability-content";
 
             var siblingScoreThreshold = Math.max(10, topCandidate.readability.contentScore * 0.2);
             // Keep potential top candidate's parent node to try to get text direction of it later.
+            // 让潜在的顶级候选人的父节点稍后尝试获取文本方向。
             parentOfTopCandidate = topCandidate.parentNode;
             var siblings = parentOfTopCandidate.children;
 
@@ -1035,6 +1052,7 @@ Readability.prototype = {
                     var contentBonus = 0;
 
                     // Give a bonus if sibling nodes and top candidates have the example same classname
+                    // 如果兄弟节点和顶级候选人具有相同的类名示例，则给予奖励
                     if (sibling.className === topCandidate.className && topCandidate.className !== "")
                         contentBonus += topCandidate.readability.contentScore * 0.2;
 
@@ -1079,6 +1097,7 @@ Readability.prototype = {
             if (this._debug)
                 this.log("Article content pre-prep: " + articleContent.innerHTML);
             // So we have all of the content that we need. Now we clean it up for presentation.
+            // 所以我们拥有我们需要的所有内容。 现在我们清理它以供演示。
             this._prepArticle(articleContent);
             if (this._debug)
                 this.log("Article content post-prep: " + articleContent.innerHTML);
