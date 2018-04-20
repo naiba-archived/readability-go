@@ -146,7 +146,7 @@ func Parse(s string, opt Option) (*Article, error) {
 	}
 	article.URL = option.PageURL
 	article.TextContent = normalizeSpace(ts(articleContent.Text()))
-	article.Content, err = articleContent.Html()
+	article.Content, err = goquery.OuterHtml(articleContent)
 	article.Content = normalizeSpace(article.Content)
 	article.Length = len(article.TextContent)
 	article.Excerpt = md.Excerpt

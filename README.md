@@ -2,7 +2,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/git.cm/naiba/go-readability)](https://goreportcard.com/report/git.cm/naiba/go-readability)  [![Build status](https://ci.appveyor.com/api/projects/status/28d8a25yts51nor5?svg=true)](https://ci.appveyor.com/project/naiba/go-readability)
 
-Arc90 **Readability** 网页正文提取算法的 Golang 实现。
+Arc90 **Readability** 网页正文提取算法的 Golang 实现。奶爸做了一些中文网页提取优化。
 
 ### 算法简介
 
