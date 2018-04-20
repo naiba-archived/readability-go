@@ -12,14 +12,20 @@ import (
 	"log"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
+	"errors"
 )
 
 var (
-	option             *Option
-	scoreList          map[*goquery.Selection]float64
-	whitespacePattern  = regexp.MustCompile(`\s*`)
+	article              *Article
+	option               *Option
+	scoreList            map[*html.Node]float64
+	readabilityDataTable map[*html.Node]bool
+	attempts             []*goquery.Selection
+
+	whitespacePattern  = regexp.MustCompile(`\s{2,}`)
 	defaultTagsToScore = map[string]int{
 		"section": 0,
 		"h2":      0,
@@ -44,26 +50,34 @@ var (
 		"ul":         0,
 		"select":     0,
 	}
-	bylinePattern               = regexp.MustCompile(`(?i)byline|author|dateline|writtenby|p-author`)
-	okMaybeItsACandidatePattern = regexp.MustCompile(`(?i)and|article|body|column|main|shadow|app|container`)
-	unlikelyCandidatesPattern   = regexp.MustCompile(`(?i)banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
-	negativePattern             = regexp.MustCompile(`(?i)hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
-	positivePattern             = regexp.MustCompile(`(?i)article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
-	flags                       = flagCleanConditionally | flagStripUnlikely | flagWeightClasses
+	bylinePattern                = regexp.MustCompile(`(?i)byline|author|dateline|writtenby|p-author`)
+	okMaybeItsACandidatePattern  = regexp.MustCompile(`(?i)and|article|body|column|main|shadow|app|container`)
+	unlikelyCandidatesPattern    = regexp.MustCompile(`(?i)banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
+	negativePattern              = regexp.MustCompile(`(?i)hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
+	positivePattern              = regexp.MustCompile(`(?i)article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
+	videoLinkPattern             = regexp.MustCompile(`(?i)\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.youku)\.com`)
+	sharePattern                 = regexp.MustCompile(`(?i)share`)
+	flags                        = map[int]bool{flagStripUnlikely: true, flagCleanConditionally: true, flagWeightClasses: true}
+	PresentationalAttributes     = []string{"align", "background", "bgcolor", "border", "cellpadding", "cellspacing", "frame", "hspace", "rules", "style", "valign", "vspace"}
+	DeprecatedSizeAttributeElems = []string{"table", "th", "td", "hr", "pre"}
+	classesToPreserve            = []string{"readability-styled", "page"}
 )
 
 const (
 	flagStripUnlikely      = 0x1
 	flagWeightClasses      = 0x2
 	flagCleanConditionally = 0x4
+	defaultCharThreshold   = 500
 )
 
 //Option 解析配置
 type Option struct {
-	MaxNodeNum      int
-	Debug           bool
-	ArticleByline   string
-	NbTopCandidates int
+	MaxNodeNum        int
+	Debug             bool
+	NbTopCandidates   int
+	CharThreshold     int
+	PageUrl           string
+	ClassesToPreserve []string
 }
 
 //Metadata 文章摘要信息
@@ -75,8 +89,14 @@ type Metadata struct {
 
 //Article 解析结果
 type Article struct {
-	Title  string
-	Byline string
+	URL         string
+	Title       string
+	Byline      string
+	Dir         string
+	Content     string
+	TextContent string
+	Length      int
+	Excerpt     string
 }
 
 //Parse 进行解析
@@ -85,13 +105,13 @@ func Parse(s string, opt Option) (*Article, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	defaultOption(&opt)
-	scoreList = make(map[*goquery.Selection]float64)
+
 	// 超出最大解析限制
 	if opt.MaxNodeNum > 0 && len(d.Nodes) > opt.MaxNodeNum {
 		return nil, fmt.Errorf("Node 数量超出最大限制：%d 。 ", opt.MaxNodeNum)
 	}
-	article := new(Article)
 	// 预处理HTML文档以提高可读性。 这包括剥离JavaScript，CSS和处理没用的标记等内容。
 	prepDocument(d)
 
@@ -99,356 +119,809 @@ func Parse(s string, opt Option) (*Article, error) {
 	md := getArticleMetadata(d)
 	article.Title = md.Title
 
-	//todo 提取文章正文
-	grabArticle(d)
+	// 提取文章正文
+	articleContent := grabArticle(d)
 
-	return article, nil
+	if articleContent == nil {
+		return nil, errors.New("没能获取到主体")
+	}
+	oh, _ := goquery.OuterHtml(articleContent)
+	l("Grabbed: ", oh)
+
+	// 后期处理
+	postProcessContent(articleContent)
+
+	// 如果我们没有在文章的元数据中找到摘录，请使用文章的第一段作为摘录。 这用于显示文章内容的预览。
+	if len(md.Excerpt) == 0 {
+		paragraphs := articleContent.Find("p").First()
+		if len(ts(paragraphs.Text())) > 0 {
+			md.Excerpt = ts(paragraphs.Text())
+		}
+	}
+
+	article.Title = normalizeSpace(md.Title)
+	if len(article.Byline) > 0 {
+		article.Byline = normalizeSpace(article.Byline)
+	} else {
+		article.Byline = normalizeSpace(md.Byline)
+	}
+	article.URL = option.PageUrl
+	article.TextContent = normalizeSpace(ts(articleContent.Text()))
+	article.Content, err = articleContent.Html()
+	article.Content = normalizeSpace(article.Content)
+	article.Length = len(article.TextContent)
+	article.Excerpt = md.Excerpt
+
+	return article, err
+}
+
+// 根据需要运行对文章内容的任何后期处理修改。
+func postProcessContent(articleContent *goquery.Selection) {
+	// Readability 无法打开相关uris，因此我们将它们转换为绝对uris。
+	fixRelativeUris(articleContent)
+	// 删除 class
+	cleanClasses(articleContent)
+}
+
+// 从给定子树中的每个元素中除去class =“”属性，除了匹配CLASSES_TO_PRESERVE的
+// 元素和来自options对象的classesToPreserve数组。
+func cleanClasses(articleContent *goquery.Selection) {
+	articleContent.Children().Each(func(i int, sel *goquery.Selection) {
+		cleanClasses(sel)
+		class, has := sel.Attr("class")
+		if has {
+			for _, cls := range classesToPreserve {
+				if strings.Contains(cls, class) {
+					return
+				}
+			}
+			sel.RemoveAttr("class")
+		}
+	})
+}
+
+// 将给定元素中的每个<a>和<img> uri转换为绝对URI，忽略#ref URI。
+func fixRelativeUris(articleContent *goquery.Selection) {
+	if !strings.HasPrefix(option.PageUrl, "http://") && !strings.HasPrefix(option.PageUrl, "https://") {
+		option.PageUrl = "http://" + option.PageUrl
+	}
+	baseUrl := option.PageUrl[:strings.Index(option.PageUrl[8:], "/")]
+	documentUrl := option.PageUrl[:strings.LastIndex(option.PageUrl, "/")]
+	toAbsoluteURI := func(url string) string {
+		if url[0] == '#' || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+			return url
+		} else if url[0] == '/' {
+			return baseUrl + url
+		} else {
+			return documentUrl + "/" + url
+		}
+		return ""
+	}
+	articleContent.Find("a").Each(func(i int, a *goquery.Selection) {
+		href, has := a.Attr("href")
+		if has {
+			if strings.HasPrefix(href, "javascript:") {
+				a.Get(0).Type = html.TextNode
+				a.Get(0).Data = a.Text()
+			} else {
+				a.SetAttr("href", toAbsoluteURI(href))
+			}
+		}
+	})
+	articleContent.Find("img").Each(func(i int, img *goquery.Selection) {
+		src, has := img.Attr("src")
+		if has {
+			img.SetAttr("src", toAbsoluteURI(src))
+		}
+	})
 }
 
 // 提取文章正文
 func grabArticle(d *goquery.Document) *goquery.Selection {
 	l("**** grabArticle ****")
 	isPaging := d != nil
+	originDoc := goquery.CloneDocument(d)
 	page := d.Find("body").First()
 	if page.Children().Length() == 0 {
 		return nil
 	}
 
-	selectionsToScore := make([]*goquery.Selection, 0)
-	stripUnlikelyCandidates := flagIsActive(flagStripUnlikely)
-	sel := d.First()
-	for sel != nil {
-		node := sel.Get(0)
+	for {
+		selectionsToScore := make([]*goquery.Selection, 0)
+		stripUnlikelyCandidates := flagIsActive(flagStripUnlikely)
+		sel := d.First()
+		for sel != nil {
+			node := sel.Get(0)
 
-		// 首先，节点预处理。 清理看起来很糟糕的垃圾节点（比如类名为“comment”的垃圾节点），
-		// 并将div转换为P标签，清理空节点。
-		matchString, _ := sel.Attr("id")
-		class, _ := sel.Attr("class")
-		matchString += " " + class
-		// 作者信息行
-		if checkByline(sel, matchString) {
-			l("checkByline", node.Data, node.Attr)
-			sel = removeAndGetNext(sel)
-			continue
-		}
-		// 清理垃圾标签
-		if stripUnlikelyCandidates && len(ts(matchString)) > 0 {
-			if unlikelyCandidatesPattern.MatchString(matchString) &&
-				!okMaybeItsACandidatePattern.MatchString(matchString) &&
-				node.Data != "body" &&
-				node.Data != "a" {
-				l("Removing unlikely candidate - " + matchString)
+			// 首先，节点预处理。 清理看起来很糟糕的垃圾节点（比如类名为“comment”的垃圾节点），
+			// 并将div转换为P标签，清理空节点。
+			matchString, _ := sel.Attr("id")
+			class, _ := sel.Attr("class")
+			matchString += " " + class
+			// 作者信息行
+			if checkByline(sel, matchString) {
+				l("checkByline", node.Data, node.Attr)
 				sel = removeAndGetNext(sel)
 				continue
 			}
-		}
-		// 清理不含任何内容的 DIV, SECTION, 和 HEADER
-		tags := map[string]int{"div": 0, "section": 0, "header": 0, "h1": 0, "h2": 0, "h3": 0, "h4": 0, "h5": 0, "h6": 0}
-		if _, has := tags[node.Data]; has && len(ts(sel.Text())) == 0 {
-			sel = removeAndGetNext(sel)
-			continue
-		}
-		// 内容标签，加分项
-		if _, has := defaultTagsToScore[node.Data]; has {
-			selectionsToScore = append(selectionsToScore, sel)
-		}
-		if node.Data == "div" {
-			// 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
-			if hasSinglePInsideElement(sel) {
-				next := getNextSelection(sel, true)
-				sel.ReplaceWithSelection(sel.Children().First())
-				selectionsToScore = append(selectionsToScore, sel)
-				sel = next
+			// 清理垃圾标签
+			if stripUnlikelyCandidates && len(ts(matchString)) > 0 {
+				if unlikelyCandidatesPattern.MatchString(matchString) &&
+					!okMaybeItsACandidatePattern.MatchString(matchString) &&
+					node.Data != "body" &&
+					node.Data != "a" {
+					l("Removing unlikely candidate - " + matchString)
+					sel = removeAndGetNext(sel)
+					continue
+				}
+			}
+			// 清理不含任何内容的 DIV, SECTION, 和 HEADER
+			tags := map[string]int{"div": 0, "section": 0, "header": 0, "h1": 0, "h2": 0, "h3": 0, "h4": 0, "h5": 0, "h6": 0}
+			if _, has := tags[node.Data]; has && len(ts(sel.Text())) == 0 {
+				sel = removeAndGetNext(sel)
 				continue
-			} else if !hasChildBlockElement(sel) {
-				// 节点不含有块级元素
-				replaceSelectionTags(sel, "p")
+			}
+			// 内容标签，加分项
+			if _, has := defaultTagsToScore[node.Data]; has {
 				selectionsToScore = append(selectionsToScore, sel)
-			} else {
-				// 含有块级元素
-				for node := sel.Get(0).FirstChild; node != nil; node = node.NextSibling {
-					if node.Type == html.TextNode && len(ts(node.Data)) > 0 {
-						ts := d.FindNodes(node)
-						tt := node.Data
-						replaceSelectionTags(ts, "p")
-						node.Attr = []html.Attribute{
-							{
-								Key: "class",
-								Val: "readability-styled",
-							},
-							{
-								Key: "style",
-								Val: "display:inline;",
-							},
+			}
+			if node.Data == "div" {
+				// 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
+				if hasSinglePInsideElement(sel) {
+					next := getNextSelection(sel, true)
+					sel.ReplaceWithSelection(sel.Children().First())
+					selectionsToScore = append(selectionsToScore, sel)
+					sel = next
+					continue
+				} else if !hasChildBlockElement(sel) {
+					// 节点不含有块级元素
+					replaceSelectionTags(sel, "p")
+					selectionsToScore = append(selectionsToScore, sel)
+				} else {
+					// 含有块级元素
+					for node := sel.Get(0).FirstChild; node != nil; node = node.NextSibling {
+						if node.Type == html.TextNode && len(ts(node.Data)) > 0 {
+							ts := d.FindNodes(node)
+							tt := node.Data
+							replaceSelectionTags(ts, "p")
+							node.Attr = []html.Attribute{
+								{
+									Key: "class",
+									Val: "readability-styled",
+								},
+								{
+									Key: "style",
+									Val: "display:inline;",
+								},
+							}
+							ts.SetText(tt)
 						}
-						ts.SetText(tt)
 					}
 				}
 			}
-		}
-		sel = getNextSelection(sel, false)
-	}
-
-	/*
-	* 循环浏览所有段落，并根据它们的外观如何分配给他们一个分数。
-	* 然后将他们的分数添加到他们的父节点。
-	* 分数由 commas，class 名称 等的 数目决定。也许最终链接密度。
-	**/
-	candidates := make([]*goquery.Selection, 0)
-	for _, sel = range selectionsToScore {
-		// 节点或节点的父节点为空，跳过
-		if sel.Parent().Length() == 0 || sel.Length() == 0 {
-			continue
-		}
-		// 如果该段落少于25个字符，跳过
-		if utf8.RuneCountInString(sel.Text()) < 25 {
-			continue
-		}
-		// 排除没有祖先的节点。
-		ancestors := getSelectionAncestors(sel, 3)
-		if len(ancestors) == 0 {
-			continue
-		}
-
-		contentScore := 0.0
-
-		// 为段落本身添加一个基础分
-		contentScore++
-
-		innerText := sel.Text()
-		// 在此段落内为所有逗号添加分数。
-		contentScore += float64(strings.Count(innerText, ","))
-		contentScore += float64(strings.Count(innerText, "，"))
-
-		// 本段中每100个字符添加一分。 最多3分。
-		contentScore += math.Min(float64(utf8.RuneCountInString(innerText)/100), 3)
-
-		// 给祖先初始化并评分。
-		for level, ancestor := range ancestors {
-			if ancestor.Length() == 0 {
-				continue
-			}
-			if scoreList[ancestor] == 0 {
-				// 初始化节点分数
-				initializeScoreSelection(ancestor)
-				candidates = append(candidates, ancestor)
-			}
-			// 节点加分规则：
-			// - 父母：1（不划分）
-			// - 祖父母：2
-			// - 祖父母：祖先等级* 3
-			divider := 1.0
-			switch level {
-			case 0:
-				divider = 1
-				break
-			case 1:
-				divider = 2
-				break
-			case 2:
-				divider = float64(level) * 3
-				break
-			}
-			scoreList[ancestor] += contentScore / divider
-		}
-	}
-
-	// 在我们计算出分数后，循环遍历我们找到的所有可能的候选节点，并找到分数最高的候选节点。
-	topCandidates := make([]*goquery.Selection, 0)
-	for _, candidate := range candidates {
-		candidateScore := 0.00
-		// 根据链接密度缩放最终候选人分数。 良好的内容应该有一个相对较小的链接密度（5％或更少），并且大多不受此操作的影响。
-		candidateScore = scoreList[candidate] * (1 - getLinkDensity(candidate))
-		scoreList[candidate] = candidateScore
-
-		l("Candidate:", candidate.Get(0).Data, "[", candidate.Get(0).Attr, "]", "with score", candidateScore)
-
-		for i := 0; i < option.NbTopCandidates; i++ {
-			var candi *goquery.Selection
-			if i < len(topCandidates) {
-				candi = topCandidates[i]
-			}
-			if candi == nil || candidateScore > scoreList[topCandidates[i]] {
-				// 分数越高排名越靠前
-				topCandidates = append(topCandidates, candidate)
-				copy(topCandidates[i+1:], topCandidates[i:])
-				topCandidates[i] = candidate
-				// 限制数量
-				if len(topCandidates) > option.NbTopCandidates {
-					topCandidates = topCandidates[:len(topCandidates)-1]
-				}
-				break
-			}
-		}
-	}
-
-	var topCandidate, parentOfTopCandidate *goquery.Selection
-	needToCreateTopCandidate := len(topCandidates) == 0
-	if !needToCreateTopCandidate {
-		topCandidate = topCandidates[0]
-	}
-
-	// 如果我们还没有topCandidate，那就把 body 作为 topCandidate。
-	// 我们还必须复制body节点，以便我们可以修改它。
-	if needToCreateTopCandidate || topCandidate.Get(0).Data == "body" {
-		needToCreateTopCandidate = true
-		// 将所有页面的子项移到topCandidate中
-		topCandidate = new(goquery.Selection)
-		topCandidate.Nodes = []*html.Node{{
-			Type:      html.ElementNode,
-			Namespace: "div",
-			Data:      "div",
-		}}
-		page.Children().Each(func(i int, s *goquery.Selection) {
-			l("Moving child out:", s.Get(0))
-			topCandidate.AppendSelection(s)
-		})
-		page.AppendSelection(topCandidate)
-
-		initializeScoreSelection(topCandidate)
-	} else if !needToCreateTopCandidate {
-		// 如果它包含（至少三个）属于`topCandidates`数组并且其分数与
-		// 当前`topCandidate`节点非常接近的节点，则找到一个更好的顶级候选节点。
-		alternativeCandidateAncestors := make([]map[*goquery.Selection]int, 0)
-		for _, c := range topCandidates {
-			if scoreList[c]/scoreList[topCandidate] >= 0.75 {
-				t := make(map[*goquery.Selection]int)
-				for _, a := range getSelectionAncestors(c, 0) {
-					t[a] = 0
-				}
-				alternativeCandidateAncestors = append(alternativeCandidateAncestors, t)
-			}
-		}
-		const MinimumTopCandidates = 3
-		if len(alternativeCandidateAncestors) >= MinimumTopCandidates {
-			parentOfTopCandidate = topCandidate.Parent()
-			for parentOfTopCandidate.Get(0).Data != "body" {
-				listsContainingThisAncestor := 0
-				for i := 0; i < len(alternativeCandidateAncestors) && listsContainingThisAncestor < MinimumTopCandidates; i++ {
-					if _, has := alternativeCandidateAncestors[i][topCandidates[i]]; has {
-						listsContainingThisAncestor += 1
-					}
-				}
-				if listsContainingThisAncestor > MinimumTopCandidates {
-					topCandidate = parentOfTopCandidate
-					break
-				}
-				parentOfTopCandidate = parentOfTopCandidate.Parent()
-			}
-		}
-		if scoreList[topCandidate] == 0 {
-			initializeScoreSelection(topCandidate)
+			sel = getNextSelection(sel, false)
 		}
 
 		/*
-		 * 由于我们的奖金制度，节点的父节点可能会有自己的分数。 他们得到节点的一半。 不会有比我们的
-		 * topCandidate分数更高的节点，但是如果我们在树的前几个步骤中看到分数增加，这是一个体面
-		 * 的信号，可能会有更多的内容潜伏在我们想要的其他地方 统一英寸下面的兄弟姐妹的东西做了一些
-		 * - 但只有当我们已经足够高的DOM树。
-		**/
-		parentOfTopCandidate = topCandidate
-		lastScore := scoreList[topCandidate]
-		// 分数不能太低。
-		scoreThreshold := lastScore / 3
-		for parentOfTopCandidate.Get(0).Data != "body" {
-			if scoreList[parentOfTopCandidate] == 0 {
-				initializeScoreSelection(parentOfTopCandidate)
+		  循环浏览所有段落，并根据它们的外观如何分配给他们一个分数。
+		  然后将他们的分数添加到他们的父节点。
+		  分数由 commas，class 名称 等的 数目决定。也许最终链接密度。
+		*/
+		candidates := make([]*goquery.Selection, 0)
+		for _, sel = range selectionsToScore {
+			// 节点或节点的父节点为空，跳过
+			if sel.Parent().Length() == 0 || sel.Length() == 0 {
 				continue
 			}
-			if scoreList[parentOfTopCandidate] < scoreThreshold {
-				break
+			// 如果该段落少于25个字符，跳过
+			if utf8.RuneCountInString(sel.Text()) < 25 {
+				continue
 			}
-			if scoreList[parentOfTopCandidate] > lastScore {
-				// 找到了一个更好的节点
-				topCandidate = parentOfTopCandidate
-				break
-			}
-			lastScore = scoreList[parentOfTopCandidate]
-			parentOfTopCandidate = parentOfTopCandidate.Parent()
-		}
-
-		// 如果最上面的候选人是唯一的孩子，那就用父母代替。 当相邻内容实际位于父节点的兄弟节点中时，这将有助于兄弟连接逻辑。
-		parentOfTopCandidate = topCandidate.Parent()
-		for parentOfTopCandidate.Get(0).Data != "body" && parentOfTopCandidate.Children().Length() == 1 {
-			topCandidate = parentOfTopCandidate
-			parentOfTopCandidate = topCandidate.Parent()
-		}
-		if scoreList[parentOfTopCandidate] == 0 {
-			initializeScoreSelection(parentOfTopCandidate)
-		}
-	}
-
-	// 现在我们有了最好的候选人，通过它的兄弟姐妹查看可能也有关联的内容。 诸如前导，内容被我们删除的广告分割等
-	articleContent := &goquery.Selection{Nodes: []*html.Node{{Type: html.ElementNode, Namespace: "div", Data: "div"}}}
-	if isPaging {
-		articleContent.SetAttr("id", "readability-content")
-	}
-
-	siblingScoreThreshold := math.Max(10, scoreList[topCandidate]*0.2)
-	// 让潜在的顶级候选人的父节点稍后尝试获取文本方向。
-	parentOfTopCandidate = topCandidate.Parent()
-	sibling := parentOfTopCandidate.Children().First()
-	for sibling.Length() > 0 {
-		willAppend := false
-		var next *goquery.Selection
-		l("Looking at sibling node:", sibling.Get(0), scoreList[sibling])
-		if sibling == topCandidate {
-			willAppend = true
-		} else {
-			contentBonus := 0.0
-
-			// 如果兄弟节点和顶级候选人具有相同的类名示例，则给予奖励
-			if sibling.AttrOr("class", "") ==
-				topCandidate.AttrOr("class", "") &&
-				topCandidate.AttrOr("class", "") != "" {
-				contentBonus += scoreList[topCandidate] * 0.2
+			// 排除没有祖先的节点。
+			ancestors := getSelectionAncestors(sel, 3)
+			if len(ancestors) == 0 {
+				continue
 			}
 
-			if scoreList[sibling]+contentBonus >= siblingScoreThreshold {
-				willAppend = true
-			} else if sibling.Get(0).Data == "p" {
-				linkDensity := getLinkDensity(sibling)
-				innerText := sibling.Text()
-				textLen := len(innerText)
+			contentScore := 0.0
 
-				if textLen > 80 && linkDensity < 0.25 {
-					willAppend = true
-				} else if textLen < 80 && textLen > 0 && linkDensity == 0 &&
-					regexp.MustCompile(`\.( |$)`).MatchString(innerText) {
-					willAppend = true
+			// 为段落本身添加一个基础分
+			contentScore++
+
+			innerText := sel.Text()
+			// 在此段落内为所有逗号添加分数。
+			contentScore += float64(strings.Count(innerText, ","))
+			contentScore += float64(strings.Count(innerText, "，"))
+
+			// 本段中每100个字符添加一分。 最多3分。
+			contentScore += math.Min(float64(utf8.RuneCountInString(innerText)/100), 3)
+
+			// 给祖先初始化并评分。
+			for level, ancestor := range ancestors {
+				if ancestor.Length() == 0 {
+					continue
+				}
+				if scoreList[ancestor.Get(0)] == 0 {
+					// 初始化节点分数
+					initializeScoreSelection(ancestor)
+					candidates = append(candidates, ancestor)
+				}
+				// 节点加分规则：
+				// - 父母：1（不划分）
+				// - 祖父母：2
+				// - 祖父母：祖先等级* 3
+				divider := 1.0
+				switch level {
+				case 0:
+					divider = 1
+					break
+				case 1:
+					divider = 2
+					break
+				case 2:
+					divider = float64(level) * 3
+					break
+				}
+				scoreList[ancestor.Get(0)] += contentScore / divider
+			}
+		}
+
+		// 在我们计算出分数后，循环遍历我们找到的所有可能的候选节点，并找到分数最高的候选节点。
+		topCandidates := make([]*goquery.Selection, 0)
+		for _, candidate := range candidates {
+			candidateScore := 0.00
+			// 根据链接密度缩放最终候选人分数。 良好的内容应该有一个相对较小的链接密度（5％或更少），并且大多不受此操作的影响。
+			candidateScore = scoreList[candidate.Get(0)] * (1 - getLinkDensity(candidate))
+			scoreList[candidate.Get(0)] = candidateScore
+
+			l("Candidate:", candidate.Get(0).Data, "[", candidate.Get(0).Attr, "]", "with score", candidateScore)
+
+			for i := 0; i < option.NbTopCandidates; i++ {
+				var candi *goquery.Selection
+				if i < len(topCandidates) {
+					candi = topCandidates[i]
+				}
+				if candi == nil || candidateScore > scoreList[topCandidates[i].Get(0)] {
+					// 分数越高排名越靠前
+					topCandidates = append(topCandidates, candidate)
+					copy(topCandidates[i+1:], topCandidates[i:])
+					topCandidates[i] = candidate
+					// 限制数量
+					if len(topCandidates) > option.NbTopCandidates {
+						topCandidates = topCandidates[:len(topCandidates)-1]
+					}
+					break
 				}
 			}
 		}
 
-		if willAppend {
-			alter := map[string]int{
-				"div": 0, "article": 0, "section": 0, "p": 0,
+		var topCandidate, parentOfTopCandidate *goquery.Selection
+		needToCreateTopCandidate := len(topCandidates) == 0
+		if !needToCreateTopCandidate {
+			topCandidate = topCandidates[0]
+		}
+
+		// 如果我们还没有topCandidate，那就把 body 作为 topCandidate。
+		// 我们还必须复制body节点，以便我们可以修改它。
+		if needToCreateTopCandidate || topCandidate.Get(0).Data == "body" {
+			needToCreateTopCandidate = true
+			// 将所有页面的子项移到topCandidate中
+			topCandidate = new(goquery.Selection)
+			topCandidate.Nodes = []*html.Node{{
+				Type:      html.ElementNode,
+				Namespace: "div",
+				Data:      "div",
+			}}
+			page.Children().Each(func(i int, s *goquery.Selection) {
+				l("Moving child out:", s.Get(0))
+				topCandidate.AppendSelection(s)
+			})
+			page.AppendSelection(topCandidate)
+
+			initializeScoreSelection(topCandidate)
+		} else if !needToCreateTopCandidate {
+			// 如果它包含（至少三个）属于`topCandidates`数组并且其分数与
+			// 当前`topCandidate`节点非常接近的节点，则找到一个更好的顶级候选节点。
+			alternativeCandidateAncestors := make([]map[*goquery.Selection]int, 0)
+			for _, c := range topCandidates {
+				if scoreList[c.Get(0)]/scoreList[topCandidate.Get(0)] >= 0.75 {
+					t := make(map[*goquery.Selection]int)
+					for _, a := range getSelectionAncestors(c, 0) {
+						t[a] = 0
+					}
+					alternativeCandidateAncestors = append(alternativeCandidateAncestors, t)
+				}
 			}
-			sn := sibling.Get(0)
-			if _, has := alter[sn.Data]; has {
-				sn.Data = "div"
-				sn.Namespace = "div"
+			const MinimumTopCandidates = 3
+			if len(alternativeCandidateAncestors) >= MinimumTopCandidates {
+				parentOfTopCandidate = topCandidate.Parent()
+				for parentOfTopCandidate.Get(0).Data != "body" {
+					listsContainingThisAncestor := 0
+					for i := 0; i < len(alternativeCandidateAncestors) && listsContainingThisAncestor < MinimumTopCandidates; i++ {
+						if _, has := alternativeCandidateAncestors[i][topCandidates[i]]; has {
+							listsContainingThisAncestor += 1
+						}
+					}
+					if listsContainingThisAncestor > MinimumTopCandidates {
+						topCandidate = parentOfTopCandidate
+						break
+					}
+					parentOfTopCandidate = parentOfTopCandidate.Parent()
+				}
 			}
-			next = sibling.Next()
-			articleContent.AppendSelection(sibling)
-			sibling = next
+			if scoreList[topCandidate.Get(0)] == 0 {
+				initializeScoreSelection(topCandidate)
+			}
+
+			/*
+			  由于我们的奖金制度，节点的父节点可能会有自己的分数。 他们得到节点的一半。 不会有比我们的
+			  topCandidate分数更高的节点，但是如果我们在树的前几个步骤中看到分数增加，这是一个体面
+			  的信号，可能会有更多的内容潜伏在我们想要的其他地方 统一英寸下面的兄弟姐妹的东西做了一些
+			  - 但只有当我们已经足够高的DOM树。
+			*/
+			parentOfTopCandidate = topCandidate
+			lastScore := scoreList[topCandidate.Get(0)]
+			// 分数不能太低。
+			scoreThreshold := lastScore / 3
+			for parentOfTopCandidate.Get(0).Data != "body" {
+				if scoreList[parentOfTopCandidate.Get(0)] == 0 {
+					initializeScoreSelection(parentOfTopCandidate)
+					continue
+				}
+				if scoreList[parentOfTopCandidate.Get(0)] < scoreThreshold {
+					break
+				}
+				if scoreList[parentOfTopCandidate.Get(0)] > lastScore {
+					// 找到了一个更好的节点
+					topCandidate = parentOfTopCandidate
+					break
+				}
+				lastScore = scoreList[parentOfTopCandidate.Get(0)]
+				parentOfTopCandidate = parentOfTopCandidate.Parent()
+			}
+
+			// 如果最上面的候选人是唯一的孩子，那就用父母代替。 当相邻内容实际位于父节点的兄弟节点中时，这将有助于兄弟连接逻辑。
+			parentOfTopCandidate = topCandidate.Parent()
+			for parentOfTopCandidate.Get(0).Data != "body" && parentOfTopCandidate.Get(0).FirstChild.NextSibling == nil {
+				topCandidate = parentOfTopCandidate
+				parentOfTopCandidate = topCandidate.Parent()
+			}
+			if scoreList[parentOfTopCandidate.Get(0)] == 0 {
+				initializeScoreSelection(parentOfTopCandidate)
+			}
+		}
+
+		// 现在我们有了最好的候选人，通过它的兄弟姐妹查看可能也有关联的内容。 诸如前导，内容被我们删除的广告分割等
+		articleContent := createSelection(d, "div")
+		if isPaging {
+			articleContent.SetAttr("id", "readability-content")
+		}
+
+		siblingScoreThreshold := math.Max(10, scoreList[topCandidate.Get(0)]*0.2)
+		// 让潜在的顶级候选人的父节点稍后尝试获取文本方向。
+		parentOfTopCandidate = topCandidate.Parent()
+		sibling := parentOfTopCandidate.Children().First()
+		for sibling.Length() > 0 {
+			willAppend := false
+			var next *goquery.Selection
+			l("Looking at sibling node:", sibling.Get(0).Data, sibling.Get(0).Attr, scoreList[sibling.Get(0)])
+			if sibling.Get(0) == topCandidate.Get(0) {
+				willAppend = true
+			} else {
+				contentBonus := 0.0
+
+				// 如果兄弟节点和顶级候选人具有相同的类名示例，则给予奖励
+				if sibling.AttrOr("class", "") ==
+					topCandidate.AttrOr("class", "") &&
+					topCandidate.AttrOr("class", "") != "" {
+					contentBonus += scoreList[topCandidate.Get(0)] * 0.2
+				}
+
+				if scoreList[sibling.Get(0)]+contentBonus >= siblingScoreThreshold {
+					willAppend = true
+				} else if sibling.Get(0).Data == "p" {
+					linkDensity := getLinkDensity(sibling)
+					innerText := sibling.Text()
+					textLen := len(innerText)
+
+					if textLen > 80 && linkDensity < 0.25 {
+						willAppend = true
+					} else if textLen < 80 && textLen > 0 && linkDensity == 0 &&
+						regexp.MustCompile(`\.( |$)`).MatchString(innerText) {
+						willAppend = true
+					}
+				}
+			}
+
+			if willAppend {
+				alter := map[string]int{
+					"div": 0, "article": 0, "section": 0, "p": 0,
+				}
+				sn := sibling.Get(0)
+				if _, has := alter[sn.Data]; has {
+					sn.Data = "div"
+					sn.Namespace = "div"
+				}
+				next = sibling.Next()
+				articleContent.AppendSelection(sibling)
+				sibling = next
+			} else {
+				sibling = sibling.Next()
+			}
+		}
+
+		logText, _ := goquery.OuterHtml(articleContent)
+		l("Article content pre-prep:", logText)
+
+		// 准备要显示的文章节点。 清理任何内联样式，iframe，表单，去除无关的<p>标签等。
+		prepArticle(articleContent)
+
+		logText, _ = goquery.OuterHtml(articleContent)
+		l("Article content post-prep:", logText)
+
+		if needToCreateTopCandidate {
+			// 我们已经创建了一个假的div事物，并且之前的循环没有任何兄弟姐妹，所以尝试创建一个新的div，然后将所有的
+			// 孩子移动过去都没有意义。 只需在这里分配ID和类名。 无需追加，因为无论如何已经发生了。
+			topCandidate.SetAttr("id", "readability-page-1")
+			topCandidate.SetAttr("class", "page")
 		} else {
-			sibling = sibling.Next()
+			div := createSelection(d, "div")
+			div.SetAttr("id", "readability-page-1")
+			div.SetAttr("class", "page")
+			ch := articleContent.Get(0).FirstChild
+			dn := div.Get(0)
+			for ch != nil {
+				t := ch.NextSibling
+				ch.PrevSibling = nil
+				ch.NextSibling = nil
+				ch.Parent = nil
+				dn.AppendChild(ch)
+				ch = t
+			}
+			articleContent.Get(0).FirstChild = div.Get(0)
+		}
+
+		logText, _ = goquery.OuterHtml(articleContent)
+		l("Article content after paging: ", logText)
+
+		parseSuccessful := true
+		// 现在我们已经完成了完整的算法，请检查是否有任何有意义的内容。 如果我们没有，我们可能需要
+		// 重新运行具有不同标志的grabArticle。 这使我们更有可能找到内容，而筛选方法使我们更有可
+		// 能找到正确内容。
+		textLength := len(ts(articleContent.Text()))
+		if textLength < option.CharThreshold {
+			parseSuccessful = false
+			d = originDoc
+			if flagIsActive(flagStripUnlikely) {
+				removeFlag(flagStripUnlikely)
+				attempts = append(attempts, articleContent)
+			} else if flagIsActive(flagWeightClasses) {
+				removeFlag(flagWeightClasses)
+				attempts = append(attempts, articleContent)
+			} else if flagIsActive(flagCleanConditionally) {
+				removeFlag(flagCleanConditionally)
+				attempts = append(attempts, articleContent)
+			} else {
+				bestContent := articleContent
+				for _, c := range attempts {
+					if len(ts(bestContent.Text())) < len(ts(c.Text())) {
+						bestContent = c
+					}
+				}
+				if len(ts(bestContent.Text())) == 0 {
+					return nil
+				}
+				parseSuccessful = true
+			}
+		}
+		if parseSuccessful {
+			// 找出来自最终候选人祖先的文字方向。
+			as := getSelectionAncestors(parentOfTopCandidate, 0)
+			as = append(as, parentOfTopCandidate, topCandidate)
+			for _, ancestor := range as {
+				if len(ts(ancestor.Get(0).Data)) == 0 {
+					continue
+				}
+				dir := ancestor.AttrOr("dir", "")
+				if len(ts(dir)) > 0 {
+					article.Dir = ts(dir)
+				}
+			}
+			return articleContent
+		}
+	}
+}
+
+// best way to create element in GoQuery
+func createSelection(d *goquery.Document, tag string) *goquery.Selection {
+	tempNode := &html.Node{Type: html.ElementNode, Namespace: tag, Data: tag}
+	d.Get(0).AppendChild(tempNode)
+	return d.FindNodes(tempNode)
+}
+
+// 准备要显示的文章节点。 清理任何内联样式，iframe，表单，去除无关的<p>标签等。
+func prepArticle(s *goquery.Selection) {
+	cleanStyles(s)
+	/*
+	  在我们继续之前检查数据表，以避免移除这些表中的项目，即使它们与其他内容元素（文本，图像等）
+	  可视化链接，这些表格也会被隔离。
+	*/
+	markDataTables(s)
+	// 清除文章内容中的垃圾
+	cleanConditionally(s, "form")
+	cleanConditionally(s, "fieldset")
+	clean(s, "object")
+	clean(s, "embed")
+	clean(s, "h1")
+	clean(s, "footer")
+	clean(s, "link")
+	clean(s, "aside")
+
+	// 清理出来的元素在最终候选名单中与他们的id / class组合“共享”，这意味着即使他们有“分享”
+	// ，我们也不会删除顶级候选人。
+	s.Children().Each(func(i int, ch *goquery.Selection) {
+		cleanMatchedNodes(ch, sharePattern)
+	})
+
+	// 如果只有一个h2，并且其文本内容与文章标题大致相同，那么它们可能将其用作标题而不是子标题，因此，
+	// 请将其删除，因为我们已经分别提取标题。
+	h2 := s.Find("h2")
+	if h2.Length() == 1 {
+		h2 = h2.First()
+		lengthSimilarRate := float64(len(h2.Text())-len(article.Title)) / float64(len(article.Title))
+		if math.Abs(lengthSimilarRate) < 0.5 {
+			var titlesMatch = false
+			if lengthSimilarRate > 0 {
+				titlesMatch = strings.Contains(h2.Text(), article.Title)
+			} else {
+				titlesMatch = strings.Contains(article.Title, h2.Text())
+			}
+			if titlesMatch {
+				clean(s, "h2")
+			}
 		}
 	}
 
-	logText, _ := articleContent.Html()
-	l("Article content pre-prep:", logText)
+	clean(s, "iframe")
+	clean(s, "input")
+	clean(s, "textarea")
+	clean(s, "select")
+	clean(s, "button")
+	cleanHeaders(s)
 
-	//todo prepArticle
-	prepArticle(articleContent)
+	// 这些最后的东西可能会删除会影响这些东西的垃圾
+	cleanConditionally(s, "table")
+	cleanConditionally(s, "ul")
+	cleanConditionally(s, "div")
 
-	return articleContent
+	// 删除多余的段落
+	s.Find("p").Each(func(i int, p *goquery.Selection) {
+		imgCount := p.Find("img").Length()
+		embedCount := p.Find("embed").Length()
+		objectCount := p.Find("object").Length()
+		// 此时，讨厌的iframe已被删除，只保留嵌入的视频。
+		iframeCount := p.Find("iframe").Length()
+		totalCount := imgCount + embedCount + objectCount + iframeCount
+
+		if totalCount == 0 && len(ts(p.Text())) == 0 {
+			p.Remove()
+		}
+	})
+
+	s.Find("br").Each(func(i int, br *goquery.Selection) {
+		next := br.Next()
+		if next.Length() > 0 && next.Get(0).Data == "p" {
+			br.Remove()
+		}
+	})
 }
 
-//
-func prepArticle(a *goquery.Selection) {
+// 清除元素中的虚假标题。 检查类名和链接密度。
+func cleanHeaders(s *goquery.Selection) {
+	for h := 1; h < 3; h++ {
+		s.Find("h" + strconv.Itoa(h)).Each(func(i int, hs *goquery.Selection) {
+			getClassWeight(hs)
+			if scoreList[hs.Get(0)] < 0 {
+				hs.Remove()
+			}
+		})
+	}
+}
 
+// 清除id / class组合与特定字符串匹配的元素。
+func cleanMatchedNodes(s *goquery.Selection, m *regexp.Regexp) {
+	end := getNextSelection(s, true)
+	next := getNextSelection(s, false)
+	for next != nil && (end == nil || next.Get(0) != end.Get(0)) {
+		if m.MatchString(next.AttrOr("class", "") + " " + next.AttrOr("id", "")) {
+			next = removeAndGetNext(next)
+		} else {
+			next = getNextSelection(next, false)
+		}
+	}
+}
+
+// 清理“tag”类型的所有元素的节点。（除非它是一个YouTube等的视频，人们喜欢看视频）
+func clean(s *goquery.Selection, tag string) {
+	embedded := map[string]int{"object": 0, "embed": 0, "iframe": 0}
+	s.Find(tag).Each(func(i int, junk *goquery.Selection) {
+		// 允许youtube和vimeo视频通过人们通常希望看到的视频。
+		_, isEmbedded := embedded[junk.Get(0).Data]
+		if isEmbedded {
+			var as []string
+			for _, a := range junk.Get(0).Attr {
+				as = append(as, a.Val)
+			}
+			// 首先，检查元素属性，看它们是否包含youtube或vimeo
+			attributeValues := strings.Join(as, "|")
+			if videoLinkPattern.MatchString(attributeValues) {
+				return
+			}
+			// 然后检查这个元素中的元素
+			h, err := junk.Html()
+			if err == nil && videoLinkPattern.MatchString(h) {
+				return
+			}
+		}
+		junk.Remove()
+	})
+
+}
+
+// 清洁“标签”类型的所有标签的元素，如果它们看起来很腥。
+// “Fishy”是一种基于内容长度，类名，链接密度，图像和嵌入数量等的算法。
+func cleanConditionally(s *goquery.Selection, tag string) {
+	if !flagIsActive(flagCleanConditionally) {
+		return
+	}
+	isList := tag == "ul" || tag == "ol"
+	// 聚集计算嵌入其他典型元素。向后返回，以便我们可以在不影响遍历的情况下同时移除节点。
+	s.Find(tag).Each(func(i int, junk *goquery.Selection) {
+		if hasAncestorTag(junk, "table", -1, func(s *goquery.Selection) bool {
+			return readabilityDataTable[s.Get(0)]
+		}) {
+			return
+		}
+		l("Cleaning Conditionally", junk.Get(0).Data, junk.Get(0).Attr)
+		getClassWeight(junk)
+		if scoreList[junk.Get(0)] < 0 {
+			junk.Remove()
+		}
+		t := junk.Text()
+		if strings.Count(t, ",") < 10 || strings.Count(t, "，") < 10 {
+			// 如果逗号不多，并且非段落元素的数量多于段落或其他不祥的标志，则删除该元素。
+			p := junk.Find("p").Length()
+			img := junk.Find("img").Length()
+			li := junk.Find("li").Length() - 100
+			input := junk.Find("input").Length()
+
+			embedCount := 0
+			junk.Find("embed").Each(func(i int, embed *goquery.Selection) {
+				if videoLinkPattern.MatchString(embed.AttrOr("src", "")) {
+					embedCount++
+				}
+			})
+
+			linkDensity := getLinkDensity(junk)
+			contentLength := len(junk.Text())
+			if (img > 1 && float64(p/img) < 0.5 && !hasAncestorTag(junk, "figure", 0, nil)) ||
+				(!isList && li > p) ||
+				(input > int(math.Floor(float64(p)/3))) ||
+				(!isList && contentLength < 25 && (img == 0 || img > 2) && !hasAncestorTag(junk, "figure", 0, nil)) ||
+				(!isList && scoreList[junk.Get(0)] < 25 && linkDensity > 0.2) ||
+				(scoreList[junk.Get(0)] >= 25 && linkDensity > 0.5) ||
+				((embedCount == 1 && contentLength < 75) || embedCount > 1) {
+				junk.Remove()
+			}
+		}
+	})
+}
+
+// 检查给定节点是否具有与提供的节点相匹配的其祖先标签名称之一。
+func hasAncestorTag(s *goquery.Selection, tag string, max int, call func(s *goquery.Selection) bool) bool {
+	if max == 0 {
+		max = 3
+	}
+	deep := 0
+	p := s.Parent()
+	for p.Length() > 0 && (max < 0 || max > 0 && deep < max) {
+		if p.Get(0).Data == tag && (call == nil || call(p)) {
+			return true
+		}
+		p = p.Parent()
+		deep++
+	}
+	return false
+}
+
+// 查找'数据'（而不是'布局'）表格，我们使用类似的检查方式，
+// 如 https://dxr.mozilla.org/mozilla-central/rev/71224049c0b52ab190564d3ea0eab089a159a4cf/accessible/html/HTMLTableAccessible.cpp#920
+func markDataTables(s *goquery.Selection) {
+	s.Find("table").Each(func(i int, table *goquery.Selection) {
+		if table.AttrOr("role", "") == "presentation" {
+			readabilityDataTable[table.Get(0)] = false
+			return
+		}
+		if table.AttrOr("datatable", "") == "0" {
+			readabilityDataTable[table.Get(0)] = false
+			return
+		}
+		if _, has := table.Attr("summary"); has {
+			readabilityDataTable[table.Get(0)] = true
+			return
+		}
+		if table.Find("caption").First().Children().Length() > 0 {
+			readabilityDataTable[table.Get(0)] = true
+			return
+		}
+		// 如果表中有任何这些标签的后代，请考虑数据表：
+		var dataTableDescendants = []string{"col", "colgroup", "tfoot", "thead", "th"}
+		for _, tag := range dataTableDescendants {
+			if table.Find(tag).Length() > 0 {
+				l("Data table because found data-y descendant")
+				readabilityDataTable[table.Get(0)] = true
+				return
+			}
+		}
+		// 嵌套表格表示布局表格：
+		if table.Find("table").Length() > 0 {
+			readabilityDataTable[table.Get(0)] = true
+			return
+		}
+		var rows, cols int = getRowAndColumnCount(table)
+		if rows >= 10 || cols > 4 {
+			readabilityDataTable[table.Get(0)] = true
+			return
+		}
+		// 现在完全按照尺寸进行：
+		readabilityDataTable[table.Get(0)] = rows*cols > 10
+	})
+}
+
+// 获取table的行列数
+func getRowAndColumnCount(table *goquery.Selection) (int, int) {
+	rows := 0
+	cols := 0
+	table.Find("tr").Each(func(i int, tr *goquery.Selection) {
+		rowSpan, _ := strconv.Atoi(tr.AttrOr("rowspan", "0"))
+		if rowSpan == 0 {
+			rowSpan = 1
+		}
+		rows += rowSpan
+		// 现在查找与列相关的信息
+		colsInRow := 0
+		tr.Find("td").Each(func(i int, td *goquery.Selection) {
+			colSpan, _ := strconv.Atoi(tr.AttrOr("colspan", "0"))
+			if colSpan == 0 {
+				colSpan = 1
+			}
+			colsInRow += colSpan
+		})
+		cols = int(math.Max(float64(colsInRow), 10.0))
+	})
+	return rows, cols
+}
+
+// 删除节点及子节点样式属性。
+func cleanStyles(s *goquery.Selection) {
+	if s.Length() == 0 || s.Get(0).Data == "svg" {
+		return
+	}
+	if s.AttrOr("class", "") != "readability-styled" {
+		// 删除`style`和不推荐的表示属性
+		for _, style := range PresentationalAttributes {
+			s.RemoveAttr(style)
+		}
+		for _, tag := range DeprecatedSizeAttributeElems {
+			if strings.Contains(s.Get(0).Data, tag) {
+				s.RemoveAttr("width")
+				s.RemoveAttr("height")
+			}
+		}
+	}
+	s.Children().Each(func(i int, is *goquery.Selection) {
+		cleanStyles(is)
+	})
 }
 
 // 获取连接密度
@@ -469,19 +942,28 @@ func defaultOption(o *Option) {
 	if o.NbTopCandidates == 0 {
 		o.NbTopCandidates = 5
 	}
+	if o.CharThreshold == 0 {
+		o.CharThreshold = defaultCharThreshold
+	}
 	option = o
+
+	article = new(Article)
+	scoreList = make(map[*html.Node]float64)
+	readabilityDataTable = make(map[*html.Node]bool)
+	attempts = make([]*goquery.Selection, 0)
+	classesToPreserve = append(classesToPreserve, option.ClassesToPreserve...)
 }
 
 // 初始化节点分数
 func initializeScoreSelection(s *goquery.Selection) {
 	switch s.Get(0).Data {
 	case "div":
-		scoreList[s] += 5
+		scoreList[s.Get(0)] += 5
 		break
 	case "pre":
 	case "td":
 	case "blockquote":
-		scoreList[s] += 3
+		scoreList[s.Get(0)] += 3
 		break
 	case "address":
 	case "ol":
@@ -491,7 +973,7 @@ func initializeScoreSelection(s *goquery.Selection) {
 	case "dt":
 	case "li":
 	case "form":
-		scoreList[s] -= 3
+		scoreList[s.Get(0)] -= 3
 		break
 	case "h1":
 	case "h2":
@@ -500,15 +982,15 @@ func initializeScoreSelection(s *goquery.Selection) {
 	case "h5":
 	case "h6":
 	case "th":
-		scoreList[s] -= 5
+		scoreList[s.Get(0)] -= 5
 		break
 	}
 	// 获取元素类/标识权重。 使用正则表达式来判断这个元素是好还是坏。
 	getClassWeight(s)
 
 	// 如果为 0 置负0.00001
-	if scoreList[s] == 0 {
-		scoreList[s] = -0.00001
+	if scoreList[s.Get(0)] == 0 {
+		scoreList[s.Get(0)] = -0.00001
 	}
 }
 
@@ -521,20 +1003,20 @@ func getClassWeight(s *goquery.Selection) {
 	className, has := s.Attr("class")
 	if has && len(className) > 0 {
 		if negativePattern.MatchString(className) {
-			scoreList[s] -= 25
+			scoreList[s.Get(0)] -= 25
 		}
 		if positivePattern.MatchString(className) {
-			scoreList[s] += 25
+			scoreList[s.Get(0)] += 25
 		}
 	}
 	// 寻找一个特殊的ID
 	id, has := s.Attr("id")
 	if has && len(className) > 0 {
 		if negativePattern.MatchString(id) {
-			scoreList[s] -= 25
+			scoreList[s.Get(0)] -= 25
 		}
 		if positivePattern.MatchString(id) {
-			scoreList[s] += 25
+			scoreList[s.Get(0)] += 25
 		}
 	}
 }
@@ -587,10 +1069,10 @@ func removeAndGetNext(s *goquery.Selection) *goquery.Selection {
 }
 
 /*
- * 从 node 开始遍历DOM，
- * 如果 ignoreSelfAndKids 为 true 则不遍历子 element
- * 改为遍历 兄弟 和 父级兄弟 element
- */
+  从 node 开始遍历DOM，
+  如果 ignoreSelfAndKids 为 true 则不遍历子 element
+  改为遍历 兄弟 和 父级兄弟 element
+*/
 func getNextSelection(s *goquery.Selection, ignoreSelfAndChildren bool) *goquery.Selection {
 	if s.Length() == 0 {
 		return nil
@@ -625,12 +1107,12 @@ func getNextSelection(s *goquery.Selection, ignoreSelfAndChildren bool) *goquery
 
 // 是否是作者信息
 func checkByline(s *goquery.Selection, matchString string) bool {
-	if len(option.ArticleByline) > 0 {
+	if len(article.Byline) > 0 {
 		return false
 	}
 	innerText := s.Text()
 	if (s.AttrOr("rel", "") == "author" || bylinePattern.MatchString(matchString)) && isValidByline(innerText) {
-		option.ArticleByline = ts(innerText)
+		article.Byline = ts(innerText)
 		return true
 	}
 	return false
@@ -644,7 +1126,12 @@ func isValidByline(line string) bool {
 
 // 是否启用
 func flagIsActive(flag int) bool {
-	return flags&flag > 0
+	return flags[flag]
+}
+
+// 禁用flag
+func removeFlag(flag int) {
+	flags[flag] = false
 }
 
 // 从 metadata 获取文章的摘要和作者信息
@@ -674,7 +1161,7 @@ func getArticleMetadata(d *goquery.Document) Metadata {
 		if len(name) > 0 {
 			elementContent, _ := s.Attr("content")
 			if len(elementContent) > 0 {
-				name = whitespacePattern.ReplaceAllString(strings.ToLower(name), " ")
+				name = normalizeSpace(strings.ToLower(name))
 				values[name] = ts(elementContent)
 			}
 		}
@@ -700,6 +1187,11 @@ func getArticleMetadata(d *goquery.Document) Metadata {
 	}
 
 	return md
+}
+
+// 将多个空格替换成单个空格
+func normalizeSpace(str string) string {
+	return whitespacePattern.ReplaceAllString(str, " ")
 }
 
 // 获取文章标题
@@ -828,8 +1320,9 @@ func replaceBrs(d *goquery.Document) {
 // 获取下一个Element
 func nextElement(n *html.Node) *html.Node {
 	for n != nil &&
-		n.Type != html.ElementNode && (whitespacePattern.MatchString(n.Data) ||
-		n.Type == html.CommentNode) {
+		n.Type != html.ElementNode &&
+		(len(ts(n.Data)) == 0 ||
+			n.Type == html.CommentNode) {
 		n = n.NextSibling
 	}
 	return n

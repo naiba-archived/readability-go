@@ -126,14 +126,18 @@ Readability.prototype = {
     /**
      * Run any post-process modifications to article content as necessary.
      *
+     * 根据需要运行对文章内容的任何后期处理修改。
+     *
      * @param Element
      * @return void
      **/
     _postProcessContent: function (articleContent) {
         // Readability cannot open relative uris so we convert them to absolute uris.
+        // 可读性无法打开相关uris，因此我们将它们转换为绝对uris。
         this._fixRelativeUris(articleContent);
 
         // Remove classes.
+        // 删除 class
         this._cleanClasses(articleContent);
     },
 
@@ -238,6 +242,9 @@ Readability.prototype = {
      * subtree, except those that match CLASSES_TO_PRESERVE and
      * the classesToPreserve array from the options object.
      *
+     * 从给定子树中的每个元素中除去class =“”属性，除了匹配CLASSES_TO_PRESERVE的
+     * 元素和来自options对象的classesToPreserve数组。
+     *
      * @param Element
      * @return void
      */
@@ -264,6 +271,8 @@ Readability.prototype = {
     /**
      * Converts each <a> and <img> uri in the given element to an absolute URI,
      * ignoring #ref URIs.
+     *
+     * 将给定元素中的每个<a>和<img> uri转换为绝对URI，忽略#ref URI。
      *
      * @param Element
      * @return void
@@ -506,6 +515,8 @@ Readability.prototype = {
      * Prepare the article node for display. Clean out any inline styles,
      * iframes, forms, strip extraneous <p> tags, etc.
      *
+     * 准备要显示的文章节点。 清理任何内联样式，iframe，表单，去除无关的<p>标签等。
+     *
      * @param Element
      * @return void
      **/
@@ -515,9 +526,12 @@ Readability.prototype = {
         // Check for data tables before we continue, to avoid removing items in
         // those tables, which will often be isolated even though they're
         // visually linked to other content-ful elements (text, images, etc.).
+        // 在我们继续之前检查数据表，以避免移除这些表中的项目，即使它们与其他内容元素（文本，图像等）
+        // 可视化链接，这些表格也会被隔离。
         this._markDataTables(articleContent);
 
         // Clean out junk from the article content
+        // 清除文章内容中的垃圾
         this._cleanConditionally(articleContent, "form");
         this._cleanConditionally(articleContent, "fieldset");
         this._clean(articleContent, "object");
@@ -529,6 +543,8 @@ Readability.prototype = {
 
         // Clean out elements have "share" in their id/class combinations from final top candidates,
         // which means we don't remove the top candidates even they have "share".
+        // 清理出来的元素在最终候选名单中与他们的id / class组合“share”，这意味着即使他们有“share”
+        // ，我们也不会删除顶级候选人。
         this._forEachNode(articleContent.children, function (topCandidate) {
             this._cleanMatchedNodes(topCandidate, /share/);
         });
@@ -536,6 +552,8 @@ Readability.prototype = {
         // If there is only one h2 and its text content substantially equals article title,
         // they are probably using it as a header and not a subheader,
         // so remove it since we already extract the title separately.
+        // 如果只有一个h2，并且其文本内容与文章标题大致相同，那么它们可能将其用作标题而不是子标题，因此，
+        // 请将其删除，因为我们已经分别提取标题。
         var h2 = articleContent.getElementsByTagName('h2');
         if (h2.length === 1) {
             var lengthSimilarRate = (h2[0].textContent.length - this._articleTitle.length) / this._articleTitle.length;
@@ -561,16 +579,19 @@ Readability.prototype = {
 
         // Do these last as the previous stuff may have removed junk
         // that will affect these
+        // 这些最后的东西可能会删除会影响这些东西的垃圾
         this._cleanConditionally(articleContent, "table");
         this._cleanConditionally(articleContent, "ul");
         this._cleanConditionally(articleContent, "div");
 
         // Remove extra paragraphs
+        // 删除多余的段落
         this._removeNodes(articleContent.getElementsByTagName('p'), function (paragraph) {
             var imgCount = paragraph.getElementsByTagName('img').length;
             var embedCount = paragraph.getElementsByTagName('embed').length;
             var objectCount = paragraph.getElementsByTagName('object').length;
             // At this point, nasty iframes have been removed, only remain embedded video ones.
+            // 此时，讨厌的iframe已被删除，只保留嵌入的视频。
             var iframeCount = paragraph.getElementsByTagName('iframe').length;
             var totalCount = imgCount + embedCount + objectCount + iframeCount;
 
@@ -760,14 +781,14 @@ Readability.prototype = {
                 // Check to see if this node is a byline, and remove it if it is.
                 // 如果是作者信息 node，删除并将指针移到下一个 node
                 if (this._checkByline(node, matchString)) {
-                    this.log("checkByline",node,matchString)
+                    this.log("checkByline", node, matchString)
                     node = this._removeAndGetNext(node);
                     continue;
                 }
 
                 // Remove unlikely candidates
                 // 清理垃圾标签
-                if (stripUnlikelyCandidates && matchString.trim().length>0) {
+                if (stripUnlikelyCandidates && matchString.trim().length > 0) {
                     if (this.REGEXPS.unlikelyCandidates.test(matchString) &&
                         !this.REGEXPS.okMaybeItsACandidate.test(matchString) &&
                         node.tagName !== "BODY" &&
@@ -1030,8 +1051,9 @@ Readability.prototype = {
             // that we removed, etc.
             // 现在我们有了最好的候选人，通过它的兄弟姐妹查看可能也有关联的内容。 诸如前导，内容被我们删除的广告分割等
             var articleContent = doc.createElement("DIV");
-            if (isPaging)
+            if (isPaging) {
                 articleContent.id = "readability-content";
+            }
 
             var siblingScoreThreshold = Math.max(10, topCandidate.readability.contentScore * 0.2);
             // Keep potential top candidate's parent node to try to get text direction of it later.
@@ -1107,6 +1129,8 @@ Readability.prototype = {
                 // for the previous loop, so there's no point trying to create a new div, and then
                 // move all the children over. Just assign IDs and class names here. No need to append
                 // because that already happened anyway.
+                // 我们已经创建了一个假的div事物，并且之前的循环没有任何兄弟姐妹，所以尝试创建一个新的div，然后将所有的
+                // 孩子移动过去都没有意义。 只需在这里分配ID和类名。 无需追加，因为无论如何已经发生了。
                 topCandidate.id = "readability-page-1";
                 topCandidate.className = "page";
             } else {
@@ -1130,6 +1154,9 @@ Readability.prototype = {
             // grabArticle with different flags set. This gives us a higher likelihood of
             // finding the content, and the sieve approach gives us a higher likelihood of
             // finding the -right- content.
+            // 现在我们已经完成了完整的算法，请检查是否有任何有意义的内容。 如果我们没有，我们可能需要
+            // 重新运行具有不同标志的grabArticle。 这使我们更有可能找到内容，而筛选方法使我们更有可
+            // 能找到正确内容。
             var textLength = this._getInnerText(articleContent, true).length;
             if (textLength < this._charThreshold) {
                 parseSuccessful = false;
@@ -1163,6 +1190,7 @@ Readability.prototype = {
 
             if (parseSuccessful) {
                 // Find out text direction from ancestors of final top candidate.
+                // 找出来自最终候选人祖先的文字方向。
                 var ancestors = [parentOfTopCandidate, topCandidate].concat(this._getNodeAncestors(parentOfTopCandidate));
                 this._someNode(ancestors, function (ancestor) {
                     if (!ancestor.tagName)
@@ -1353,6 +1381,8 @@ Readability.prototype = {
      * Remove the style attribute on every e and under.
      * TODO: Test if getElementsByTagName(*) is faster.
      *
+     * 删除每个e和下的样式属性。
+     *
      * @param Element
      * @return void
      **/
@@ -1362,6 +1392,7 @@ Readability.prototype = {
 
         if (e.className !== 'readability-styled') {
             // Remove `style` and deprecated presentational attributes
+            // 删除`style`和不推荐的表示属性
             for (var i = 0; i < this.PRESENTATIONAL_ATTRIBUTES.length; i++) {
                 e.removeAttribute(this.PRESENTATIONAL_ATTRIBUTES[i]);
             }
@@ -1445,6 +1476,8 @@ Readability.prototype = {
      * Clean a node of all elements of type "tag".
      * (Unless it's a youtube/vimeo video. People love movies.)
      *
+     * 清理“tag”类型的所有元素的节点。 （除非它是一个YouTube / VIMEO视频，人们喜欢看电影。）
+     *
      * @param Element
      * @param string tag to clean
      * @return void
@@ -1454,16 +1487,19 @@ Readability.prototype = {
 
         this._removeNodes(e.getElementsByTagName(tag), function (element) {
             // Allow youtube and vimeo videos through as people usually want to see those.
+            // 允许youtube和vimeo视频通过人们通常希望看到的视频。
             if (isEmbed) {
                 var attributeValues = [].map.call(element.attributes, function (attr) {
                     return attr.value;
                 }).join("|");
 
                 // First, check the elements attributes to see if any of them contain youtube or vimeo
+                // 首先，检查元素属性，看它们是否包含youtube或vimeo
                 if (this.REGEXPS.videos.test(attributeValues))
                     return false;
 
                 // Then check the elements inside this element for the same.
+                // 然后检查这个元素中的元素是否相同。
                 if (this.REGEXPS.videos.test(element.innerHTML))
                     return false;
             }
@@ -1475,6 +1511,9 @@ Readability.prototype = {
     /**
      * Check if a given node has one of its ancestor tag name matching the
      * provided one.
+     *
+     * 检查给定节点是否具有与提供的节点相匹配的其祖先标签名称之一。
+     *
      * @param  HTMLElement node
      * @param  String      tagName
      * @param  Number      maxDepth
@@ -1498,6 +1537,8 @@ Readability.prototype = {
 
     /**
      * Return an object indicating how many rows and columns this table has.
+     *
+     * 返回一个对象，指示该表有多少个行和列。
      */
     _getRowAndColumnCount: function (table) {
         var rows = 0;
@@ -1511,6 +1552,7 @@ Readability.prototype = {
             rows += (rowspan || 1);
 
             // Now look for column-related info
+            // 现在查找与列相关的信息
             var columnsInThisRow = 0;
             var cells = trs[i].getElementsByTagName("td");
             for (var j = 0; j < cells.length; j++) {
@@ -1529,6 +1571,9 @@ Readability.prototype = {
      * Look for 'data' (as opposed to 'layout') tables, for which we use
      * similar checks as
      * https://dxr.mozilla.org/mozilla-central/rev/71224049c0b52ab190564d3ea0eab089a159a4cf/accessible/html/HTMLTableAccessible.cpp#920
+     *
+     * 查找'数据'（而不是'布局'）表格，我们使用类似的检查方式，
+     * 如https://dxr.mozilla.org/mozilla-central/rev/71224049c0b52ab190564d3ea0eab089a159a4cf/accessible/html/HTMLTableAccessible.cpp#920
      */
     _markDataTables: function (root) {
         var tables = root.getElementsByTagName("table");
@@ -1557,6 +1602,7 @@ Readability.prototype = {
             }
 
             // If the table has a descendant with any of these tags, consider a data table:
+            // 如果表中有任何这些标签的后代，请考虑数据表：
             var dataTableDescendants = ["col", "colgroup", "tfoot", "thead", "th"];
             var descendantExists = function (tag) {
                 return !!table.getElementsByTagName(tag)[0];
@@ -1568,6 +1614,7 @@ Readability.prototype = {
             }
 
             // Nested tables indicate a layout table:
+            // 嵌套表格表示布局表格：
             if (table.getElementsByTagName("table")[0]) {
                 table._readabilityDataTable = false;
                 continue;
@@ -1579,6 +1626,7 @@ Readability.prototype = {
                 continue;
             }
             // Now just go by size entirely:
+            // 现在完全按照尺寸进行：
             table._readabilityDataTable = sizeInfo.rows * sizeInfo.columns > 10;
         }
     },
@@ -1586,6 +1634,9 @@ Readability.prototype = {
     /**
      * Clean an element of all tags of type "tag" if they look fishy.
      * "Fishy" is an algorithm based on content length, classnames, link density, number of images & embeds, etc.
+     *
+     * 清洁“标签”类型的所有标签的元素，如果它们看起来很腥。
+     * “Fishy”是一种基于内容长度，类名，链接密度，图像和嵌入数量等的算法。
      *
      * @return void
      **/
@@ -1598,7 +1649,7 @@ Readability.prototype = {
         // Gather counts for other typical elements embedded within.
         // Traverse backwards so we can remove nodes at the same time
         // without effecting the traversal.
-        //
+        // 聚集计算嵌入其他典型元素。向后返回，以便我们可以在不影响遍历的情况下同时移除节点。
         // TODO: Consider taking into account original contentScore here.
         this._removeNodes(e.getElementsByTagName(tag), function (node) {
             // First check if we're in a data table, in which case don't remove us.
@@ -1623,6 +1674,7 @@ Readability.prototype = {
                 // If there are not very many commas, and the number of
                 // non-paragraph elements is more than paragraphs or other
                 // ominous signs, remove the element.
+                // 如果逗号不多，并且非段落元素的数量多于段落或其他不祥的标志，则删除该元素。
                 var p = node.getElementsByTagName("p").length;
                 var img = node.getElementsByTagName("img").length;
                 var li = node.getElementsByTagName("li").length - 100;
@@ -1655,6 +1707,8 @@ Readability.prototype = {
     /**
      * Clean out elements whose id/class combinations match specific string.
      *
+     * 清除id / class组合与特定字符串匹配的元素。
+     *
      * @param Element
      * @param RegExp match id/class combination.
      * @return void
@@ -1673,6 +1727,8 @@ Readability.prototype = {
 
     /**
      * Clean out spurious headers from an Element. Checks things like classnames and link density.
+     *
+     * 清除元素中的虚假标题。 检查类名和链接密度。
      *
      * @param Element
      * @return void
@@ -1800,6 +1856,7 @@ Readability.prototype = {
         // If we haven't found an excerpt in the article's metadata, use the article's
         // first paragraph as the excerpt. This is used for displaying a preview of
         // the article's content.
+        // 如果我们没有在文章的元数据中找到摘录，请使用文章的第一段作为摘录。 这用于显示文章内容的预览。
         if (!metadata.excerpt) {
             var paragraphs = articleContent.getElementsByTagName("p");
             if (paragraphs.length > 0) {
