@@ -6,6 +6,7 @@
 package readability
 
 import (
+	"errors"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
@@ -15,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-	"errors"
 )
 
 var (
@@ -50,17 +50,17 @@ var (
 		"ul":         0,
 		"select":     0,
 	}
-	bylinePattern                = regexp.MustCompile(`(?i)byline|author|dateline|writtenby|p-author`)
-	okMaybeItsACandidatePattern  = regexp.MustCompile(`(?i)and|article|body|column|main|shadow|app|container`)
-	unlikelyCandidatesPattern    = regexp.MustCompile(`(?i)banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
-	negativePattern              = regexp.MustCompile(`(?i)hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
-	positivePattern              = regexp.MustCompile(`(?i)article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
-	videoLinkPattern             = regexp.MustCompile(`(?i)\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.youku)\.com`)
-	sharePattern                 = regexp.MustCompile(`(?i)share`)
-	flags                        = map[int]bool{flagStripUnlikely: true, flagCleanConditionally: true, flagWeightClasses: true}
-	PresentationalAttributes     = []string{"align", "background", "bgcolor", "border", "cellpadding", "cellspacing", "frame", "hspace", "rules", "style", "valign", "vspace"}
-	DeprecatedSizeAttributeElems = []string{"table", "th", "td", "hr", "pre"}
-	classesToPreserve            = []string{"readability-styled", "page"}
+	bylinePattern               = regexp.MustCompile(`(?i)byline|author|dateline|writtenby|p-author`)
+	okMaybeItsACandidatePattern = regexp.MustCompile(`(?i)and|article|body|column|main|shadow|app|container`)
+	unlikelyCandidatesPattern   = regexp.MustCompile(`(?i)banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
+	negativePattern             = regexp.MustCompile(`(?i)hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
+	positivePattern             = regexp.MustCompile(`(?i)article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
+	videoLinkPattern            = regexp.MustCompile(`(?i)\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.youku)\.com`)
+	sharePattern                = regexp.MustCompile(`(?i)share`)
+	flags                       = map[int]bool{flagStripUnlikely: true, flagCleanConditionally: true, flagWeightClasses: true}
+	presentationalAttributes    = []string{"align", "background", "bgcolor", "border", "cellpadding", "cellspacing", "frame", "hspace", "rules", "style", "valign", "vspace"}
+	deprecatedSizeAttributeElem = []string{"table", "th", "td", "hr", "pre"}
+	classesToPreserve           = []string{"readability-styled", "page"}
 )
 
 const (
@@ -76,12 +76,11 @@ type Option struct {
 	Debug             bool
 	NbTopCandidates   int
 	CharThreshold     int
-	PageUrl           string
+	PageURL           string
 	ClassesToPreserve []string
 }
 
-//Metadata 文章摘要信息
-type Metadata struct {
+type metadata struct {
 	Title   string
 	Excerpt string
 	Byline  string
@@ -145,7 +144,7 @@ func Parse(s string, opt Option) (*Article, error) {
 	} else {
 		article.Byline = normalizeSpace(md.Byline)
 	}
-	article.URL = option.PageUrl
+	article.URL = option.PageURL
 	article.TextContent = normalizeSpace(ts(articleContent.Text()))
 	article.Content, err = articleContent.Html()
 	article.Content = normalizeSpace(article.Content)
@@ -182,18 +181,18 @@ func cleanClasses(articleContent *goquery.Selection) {
 
 // 将给定元素中的每个<a>和<img> uri转换为绝对URI，忽略#ref URI。
 func fixRelativeUris(articleContent *goquery.Selection) {
-	if !strings.HasPrefix(option.PageUrl, "http://") && !strings.HasPrefix(option.PageUrl, "https://") {
-		option.PageUrl = "http://" + option.PageUrl
+	if !strings.HasPrefix(option.PageURL, "http://") && !strings.HasPrefix(option.PageURL, "https://") {
+		option.PageURL = "http://" + option.PageURL
 	}
-	baseUrl := option.PageUrl[:strings.Index(option.PageUrl[8:], "/")]
-	documentUrl := option.PageUrl[:strings.LastIndex(option.PageUrl, "/")]
+	baseURL := option.PageURL[:strings.Index(option.PageURL[8:], "/")]
+	documentURL := option.PageURL[:strings.LastIndex(option.PageURL, "/")]
 	toAbsoluteURI := func(url string) string {
 		if url[0] == '#' || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 			return url
 		} else if url[0] == '/' {
-			return baseUrl + url
+			return baseURL + url
 		} else {
-			return documentUrl + "/" + url
+			return documentURL + "/" + url
 		}
 		return ""
 	}
@@ -439,7 +438,7 @@ func grabArticle(d *goquery.Document) *goquery.Selection {
 					listsContainingThisAncestor := 0
 					for i := 0; i < len(alternativeCandidateAncestors) && listsContainingThisAncestor < MinimumTopCandidates; i++ {
 						if _, has := alternativeCandidateAncestors[i][topCandidates[i]]; has {
-							listsContainingThisAncestor += 1
+							listsContainingThisAncestor ++
 						}
 					}
 					if listsContainingThisAncestor > MinimumTopCandidates {
@@ -909,10 +908,10 @@ func cleanStyles(s *goquery.Selection) {
 	}
 	if s.AttrOr("class", "") != "readability-styled" {
 		// 删除`style`和不推荐的表示属性
-		for _, style := range PresentationalAttributes {
+		for _, style := range presentationalAttributes {
 			s.RemoveAttr(style)
 		}
-		for _, tag := range DeprecatedSizeAttributeElems {
+		for _, tag := range deprecatedSizeAttributeElem {
 			if strings.Contains(s.Get(0).Data, tag) {
 				s.RemoveAttr("width")
 				s.RemoveAttr("height")
@@ -1135,8 +1134,8 @@ func removeFlag(flag int) {
 }
 
 // 从 metadata 获取文章的摘要和作者信息
-func getArticleMetadata(d *goquery.Document) Metadata {
-	var md Metadata
+func getArticleMetadata(d *goquery.Document) metadata {
+	var md metadata
 	values := make(map[string]string)
 
 	namePattern := regexp.MustCompile(`^\s*((twitter)\s*:\s*)?(description|title)\s*$`)

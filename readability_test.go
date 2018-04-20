@@ -7,15 +7,15 @@ package readability
 
 import (
 	"io/ioutil"
-	"testing"
 	"strconv"
+	"testing"
 )
 
 func TestParse(t *testing.T) {
 	pageUrls := []string{"https://www.lifelonglearning.cc/p82_interview.html", "https://www.qdaily.com/articles/52259.html", "https://www.cnblogs.com/163yun/p/8867738.html"}
 	for page := 0; page < 3; page++ {
 		htmlStr, _ := ioutil.ReadFile("./test/" + strconv.Itoa(page) + ".html")
-		article, err := Parse(string(htmlStr), Option{Debug: false, PageUrl: pageUrls[page]})
+		article, err := Parse(string(htmlStr), Option{Debug: false, PageURL: pageUrls[page]})
 		if err != nil {
 			t.Log(err)
 		} else {
