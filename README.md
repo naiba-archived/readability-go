@@ -4,7 +4,7 @@
 
 **Readability** 网页正文提取算法的 Golang 实现。
 
-###使用说明
+### 使用说明
 
 1. 获取包
     ```shell
@@ -34,6 +34,7 @@ go test -v git.cm/naiba/go-readability
         }
     }
     ```
+
 ### 提取效果
 
 ```shell
