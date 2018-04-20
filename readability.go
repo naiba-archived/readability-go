@@ -194,7 +194,6 @@ func fixRelativeUris(articleContent *goquery.Selection) {
 		} else {
 			return documentURL + "/" + url
 		}
-		return ""
 	}
 	articleContent.Find("a").Each(func(i int, a *goquery.Selection) {
 		href, has := a.Attr("href")
@@ -220,6 +219,7 @@ func grabArticle(d *goquery.Document) *goquery.Selection {
 	l("**** grabArticle ****")
 	isPaging := d != nil
 	originDoc := goquery.CloneDocument(d)
+
 	page := d.Find("body").First()
 	if page.Children().Length() == 0 {
 		return nil
@@ -438,7 +438,7 @@ func grabArticle(d *goquery.Document) *goquery.Selection {
 					listsContainingThisAncestor := 0
 					for i := 0; i < len(alternativeCandidateAncestors) && listsContainingThisAncestor < MinimumTopCandidates; i++ {
 						if _, has := alternativeCandidateAncestors[i][topCandidates[i]]; has {
-							listsContainingThisAncestor ++
+							listsContainingThisAncestor++
 						}
 					}
 					if listsContainingThisAncestor > MinimumTopCandidates {
