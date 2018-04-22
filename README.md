@@ -26,7 +26,7 @@ go test -v git.cm/naiba/go-readability
     	"git.cm/naiba/go-readability"
     )
     func main(){
-        article,err := readability.Parse(htmlString, Option{Debug: false, PageUrl: pageUrlString})
+        article, err := New(Option{Debug: false, PageURL: URLofThePage}).Parse(string(htmlStr))
         if err != nil {
             log.Fatal(err)
         } else {
