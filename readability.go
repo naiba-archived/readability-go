@@ -58,10 +58,10 @@ var (
 )
 
 const (
-	flagStripUnlikely      = iota
-	flagWeightClasses      
-	flagCleanConditionally 
-	defaultCharThreshold   
+	flagStripUnlikely = iota
+	flagWeightClasses
+	flagCleanConditionally
+	defaultCharThreshold
 )
 
 //Option 解析配置
@@ -113,10 +113,10 @@ func New(o Option) *Readability {
 	}
 	o.ClassesToPreserve = append(o.ClassesToPreserve, classesToPreserve...)
 	return &Readability{article: new(Article),
-		scoreList: make(map[*html.Node]float64),
+		scoreList:            make(map[*html.Node]float64),
 		readabilityDataTable: make(map[*html.Node]bool),
-		attempts: make([]*goquery.Selection, 0),
-		option: &o,
+		attempts:             make([]*goquery.Selection, 0),
+		option:               &o,
 	}
 }
 
