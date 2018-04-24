@@ -206,7 +206,7 @@ func (read *Readability) fixRelativeUris(articleContent *goquery.Selection) {
 		read.option.PageURL = "http://" + read.option.PageURL
 	}
 	baseURL := read.option.PageURL[:strings.Index(read.option.PageURL[8:], "/")+8]
-	documentURL := read.option.PageURL[:strings.LastIndex(read.option.PageURL, "/")]
+	documentURL := read.option.PageURL[:strings.LastIndex(read.option.PageURL, "/")+1]
 	toAbsoluteURI := func(url string) string {
 		if url[0] == '#' || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 			return url
