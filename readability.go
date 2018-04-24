@@ -58,10 +58,10 @@ var (
 )
 
 const (
-	flagStripUnlikely = iota
-	flagWeightClasses
-	flagCleanConditionally
-	defaultCharThreshold
+	flagStripUnlikely      = iota
+	flagWeightClasses      
+	flagCleanConditionally 
+	defaultCharThreshold   
 )
 
 //Option 解析配置
@@ -113,10 +113,10 @@ func New(o Option) *Readability {
 	}
 	o.ClassesToPreserve = append(o.ClassesToPreserve, classesToPreserve...)
 	return &Readability{article: new(Article),
-		scoreList:            make(map[*html.Node]float64),
+		scoreList: make(map[*html.Node]float64),
 		readabilityDataTable: make(map[*html.Node]bool),
-		attempts:             make([]*goquery.Selection, 0),
-		option:               &o,
+		attempts: make([]*goquery.Selection, 0),
+		option: &o,
 	}
 }
 
@@ -205,8 +205,8 @@ func (read *Readability) fixRelativeUris(articleContent *goquery.Selection) {
 	if !strings.HasPrefix(read.option.PageURL, "http://") && !strings.HasPrefix(read.option.PageURL, "https://") {
 		read.option.PageURL = "http://" + read.option.PageURL
 	}
-	baseURL := read.option.PageURL[:strings.Index(read.option.PageURL[8:], "/")]
-	documentURL := read.option.PageURL[:strings.LastIndex(read.option.PageURL, "/")]
+	baseURL := read.option.PageURL[:strings.Index(read.option.PageURL[8:], "/")+8]
+	documentURL := read.option.PageURL[:strings.LastIndex(read.option.PageURL, "/")+8]
 	toAbsoluteURI := func(url string) string {
 		if url[0] == '#' || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 			return url
