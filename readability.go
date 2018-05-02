@@ -361,7 +361,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 
 			// 给祖先初始化并评分。
 			for level, ancestor := range ancestors {
-				if ancestor.Length() == 0 {
+				if ancestor.Length() == 0 || ancestor.Get(0).Parent == nil || ancestor.Get(0).Parent.Data == "" {
 					continue
 				}
 				if read.scoreList[ancestor.Get(0)] == 0 {

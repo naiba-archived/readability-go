@@ -10,19 +10,26 @@
  * available at: http://code.google.com/p/arc90labs-readability
  */
 
-/* 算法同步 Readability Version: 5ee03bc96046ba7a1c8592e2a0e3a8152473ecec */
+/* 算法同步 Readability Version: f4ab8569926d3eae51a0781b56bc084ca440010b */
 
 /**
  * 共有构造方法
  * 这里面对成员变量和配置参数进行了一些初始化操作。
- * @param {Object}       uri     要解析对象的URI
  * @param {HTMLDocument} doc     要解析的 document
  * @param {Object}       options 解析配置
  */
-function Readability(uri, doc, options) {
+function Readability(doc, options) {
+
+    // In some older versions, people passed a URI as the first argument. Cope:
+    if (options && options.documentElement) {
+        doc = options;
+        options = arguments[2];
+    } else if (!doc || !doc.documentElement) {
+        throw new Error("First argument to Readability constructor should be a document object.");
+    }
+
     options = options || {};
 
-    this._uri = uri;
     this._doc = doc;
     this._articleTitle = null;
     this._articleByline = null;
@@ -895,7 +902,7 @@ Readability.prototype = {
                 // Initialize and score ancestors.
                 // 给祖先初始化并评分。
                 this._forEachNode(ancestors, function (ancestor, level) {
-                    if (!ancestor.tagName)
+                    if (!ancestor.tagName || !ancestor.parentNode || typeof(ancestor.parentNode.tagName) === 'undefined')
                         return;
 
                     if (typeof(ancestor.readability) === 'undefined') {
@@ -1870,7 +1877,6 @@ Readability.prototype = {
 
         var textContent = articleContent.textContent;
         return {
-            uri: this._uri,
             title: this._articleTitle,
             byline: metadata.byline || this._articleByline,
             dir: this._articleDir,
