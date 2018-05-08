@@ -1,6 +1,6 @@
 # Readability 网页正文提取
 
-[![Go Report Card](https://goreportcard.com/badge/git.cm/naiba/go-readability)](https://goreportcard.com/report/git.cm/naiba/go-readability)  [![Build status](https://ci.appveyor.com/api/projects/status/28d8a25yts51nor5?svg=true)](https://ci.appveyor.com/project/naiba/go-readability)
+[![Go Report Card](https://goreportcard.com/badge/github.com/naiba/go-readability)](https://goreportcard.com/report/github.com/naiba/go-readability)  [![Build status](https://ci.appveyor.com/api/projects/status/28d8a25yts51nor5?svg=true)](https://ci.appveyor.com/project/naiba/go-readability)
 
 Arc90 **Readability** 网页正文提取算法的 Golang 实现。奶爸做了一些中文网页提取优化。
 
@@ -13,9 +13,10 @@ Arc90 **Readability** 网页正文提取算法的 Golang 实现。奶爸做了�
 ### 使用说明
 
 1. 获取包
+
     ```shell
-go get git.cm/naiba/go-readability
-go test -v git.cm/naiba/go-readability
+    go get github.com/naiba/go-readability
+    go test -v github.com/naiba/go-readability
     ```
 
 2. 使用包
