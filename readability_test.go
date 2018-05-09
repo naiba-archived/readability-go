@@ -7,15 +7,26 @@ package readability
 
 import (
 	"io/ioutil"
-	"strconv"
+	"net/http"
 	"testing"
 )
 
 func TestParse(t *testing.T) {
-	pageUrls := []string{"https://www.lifelonglearning.cc/p82_interview.html", "https://www.qdaily.com/articles/52259.html", "https://www.cnblogs.com/163yun/p/8867738.html"}
-	for page := 0; page < 3; page++ {
-		htmlStr, _ := ioutil.ReadFile("./test/" + strconv.Itoa(page) + ".html")
-		article, err := New(Option{Debug: false, PageURL: pageUrls[page]}).Parse(string(htmlStr))
+	pageUrls := []string{
+		"https://www.lifelonglearning.cc/p82_interview.html",
+		"https://www.qdaily.com/articles/52259.html",
+		"https://www.cnblogs.com/163yun/p/8867738.html",
+	}
+	for page := 0; page < len(pageUrls); page++ {
+		resp, err := http.Get(pageUrls[page])
+		if err != nil {
+			continue
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+		article, err := New(Option{Debug: false, PageURL: pageUrls[page]}).Parse(string(body))
 		if err != nil {
 			t.Log(err)
 		} else {
@@ -27,5 +38,6 @@ func TestParse(t *testing.T) {
 			t.Log("摘要", article.Excerpt)
 			t.Log(article.Content)
 		}
+		resp.Body.Close()
 	}
 }
