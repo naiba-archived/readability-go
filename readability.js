@@ -1,4 +1,3 @@
-```JavaScript
 /*
  * Copyright (c) 2018, 奶爸<1@5.nu>
  * All rights reserved.
@@ -132,8 +131,19 @@ Readability.prototype = {
 
     DEPRECATED_SIZE_ATTRIBUTE_ELEMS: ["TABLE", "TH", "TD", "HR", "PRE"],
 
+    // The commented out elements qualify as phrasing content but tend to be
+    // removed by readability when put into paragraphs, so we ignore them here.
+    PHRASING_ELEMS: [
+        // "CANVAS", "IFRAME", "SVG", "VIDEO",
+        "ABBR", "AUDIO", "B", "BDO", "BR", "BUTTON", "CITE", "CODE", "DATA",
+        "DATALIST", "DFN", "EM", "EMBED", "I", "IMG", "INPUT", "KBD", "LABEL",
+        "MARK", "MATH", "METER", "NOSCRIPT", "OBJECT", "OUTPUT", "PROGRESS", "Q",
+        "RUBY", "SAMP", "SCRIPT", "SELECT", "SMALL", "SPAN", "STRONG", "SUB",
+        "SUP", "TEXTAREA", "TIME", "VAR", "WBR"
+    ],
+
     // These are the classes that readability sets itself.
-    CLASSES_TO_PRESERVE: ["readability-styled", "page"],
+    CLASSES_TO_PRESERVE: ["page"],
 
     /**
      * Run any post-process modifications to article content as necessary.
@@ -829,6 +839,28 @@ Readability.prototype = {
                 // Turn all divs that don't have children block level elements into p's
                 // 将所有没有 children 的 div 转换为 p
                 if (node.tagName === "DIV") {
+
+                    // Put phrasing content into paragraphs.
+                    // 将短语内容分段。
+                    var p = null;
+                    var childNode = node.firstChild;
+                    while (childNode) {
+                        var nextSibling = childNode.nextSibling;
+                        if (this._isPhrasingContent(childNode)) {
+                            if (p !== null) {
+                                p.appendChild(childNode);
+                            } else if (childNode.nodeType !== this.TEXT_NODE ||
+                                childNode.textContent.trim().length > 0) {
+                                p = doc.createElement('p');
+                                node.replaceChild(p, childNode);
+                                p.appendChild(childNode);
+                            }
+                        } else {
+                            p = null;
+                        }
+                        childNode = nextSibling;
+                    }
+
                     // Sites like http://mobile.slate.com encloses each paragraph with a DIV
                     // element. DIVs with only a P element inside and no text content can be
                     // safely converted into plain P elements to avoid confusing the scoring
@@ -844,17 +876,6 @@ Readability.prototype = {
                         // 确定元素含有的都不是块级元素
                         node = this._setNodeTag(node, "P");
                         elementsToScore.push(node);
-                    } else {
-                        // 含有块级元素
-                        this._forEachNode(node.childNodes, function (childNode) {
-                            if (childNode.nodeType === this.TEXT_NODE && childNode.textContent.trim().length > 0) {
-                                var p = doc.createElement('p');
-                                p.textContent = childNode.textContent;
-                                p.style.display = 'inline';
-                                p.className = 'readability-styled';
-                                node.replaceChild(p, childNode);
-                            }
-                        });
                     }
                 }
                 node = this._getNextNode(node);
@@ -1359,6 +1380,17 @@ Readability.prototype = {
         });
     },
 
+    /***
+     * Determine if a node qualifies as phrasing content.
+     * 确定节点是否符合短语内容。
+     * https://developer.mozilla.org/en-US/docs/Web/Guide/HTML/Content_categories#Phrasing_content
+     **/
+    _isPhrasingContent: function (node) {
+        return node.nodeType === this.TEXT_NODE || this.PHRASING_ELEMS.indexOf(node.tagName) !== -1 ||
+            ((node.tagName === "A" || node.tagName === "DEL" || node.tagName === "INS") &&
+                this._everyNode(node.childNodes, this._isPhrasingContent));
+    },
+
     /**
      * Get the inner text of a node - cross browser compatibly.
      * This also strips out any excess whitespace to be found.
@@ -1402,17 +1434,15 @@ Readability.prototype = {
         if (!e || e.tagName.toLowerCase() === 'svg')
             return;
 
-        if (e.className !== 'readability-styled') {
-            // Remove `style` and deprecated presentational attributes
-            // 删除`style`和不推荐的表示属性
-            for (var i = 0; i < this.PRESENTATIONAL_ATTRIBUTES.length; i++) {
-                e.removeAttribute(this.PRESENTATIONAL_ATTRIBUTES[i]);
-            }
+        // Remove `style` and deprecated presentational attributes
+        // 删除`style`和不推荐的表示属性
+        for (var i = 0; i < this.PRESENTATIONAL_ATTRIBUTES.length; i++) {
+            e.removeAttribute(this.PRESENTATIONAL_ATTRIBUTES[i]);
+        }
 
-            if (this.DEPRECATED_SIZE_ATTRIBUTE_ELEMS.indexOf(e.tagName) !== -1) {
-                e.removeAttribute('width');
-                e.removeAttribute('height');
-            }
+        if (this.DEPRECATED_SIZE_ATTRIBUTE_ELEMS.indexOf(e.tagName) !== -1) {
+            e.removeAttribute('width');
+            e.removeAttribute('height');
         }
 
         var cur = e.firstElementChild;
@@ -1892,4 +1922,3 @@ Readability.prototype = {
 if (typeof module === "object") {
     module.exports = Readability;
 }
-```

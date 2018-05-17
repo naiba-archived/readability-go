@@ -54,14 +54,24 @@ var (
 	flags                       = map[int]bool{flagStripUnlikely: true, flagCleanConditionally: true, flagWeightClasses: true}
 	presentationalAttributes    = []string{"align", "background", "bgcolor", "border", "cellpadding", "cellspacing", "frame", "hspace", "rules", "style", "valign", "vspace"}
 	deprecatedSizeAttributeElem = []string{"table", "th", "td", "hr", "pre"}
-	classesToPreserve           = []string{"readability-styled", "page"}
+	// 注释掉的元素符合短语内容，但在放入段落时往往会因可读性而被删除，所以我们在此忽略它们。
+	phrasingElements = []string{
+		// "CANVAS", "IFRAME", "SVG", "VIDEO",
+		"abbr", "audio", "b", "bdo", "br",
+		"button", "cite", "code", "data",
+		"datalist", "dfn", "em", "embed", "i", "img", "input", "kbd", "label",
+		"mark", "math", "meter", "noscript", "object", "output", "progress", "q",
+		"ruby", "samp", "script", "select", "small", "span", "strong", "sub",
+		"sup", "textarea", "time", "var", "wbr",
+	}
+	classesToPreserve = []string{"page"}
 )
 
 const (
-	flagStripUnlikely = iota
-	flagWeightClasses
-	flagCleanConditionally
-	defaultCharThreshold
+	flagStripUnlikely      = iota
+	flagWeightClasses      
+	flagCleanConditionally 
+	defaultCharThreshold   
 )
 
 //Option 解析配置
@@ -113,10 +123,10 @@ func New(o Option) *Readability {
 	}
 	o.ClassesToPreserve = append(o.ClassesToPreserve, classesToPreserve...)
 	return &Readability{article: new(Article),
-		scoreList:            make(map[*html.Node]float64),
+		scoreList: make(map[*html.Node]float64),
 		readabilityDataTable: make(map[*html.Node]bool),
-		attempts:             make([]*goquery.Selection, 0),
-		option:               &o,
+		attempts: make([]*goquery.Selection, 0),
+		option: &o,
 	}
 }
 
@@ -211,6 +221,9 @@ func (read *Readability) fixRelativeUris(articleContent *goquery.Selection) {
 		baseURL = read.option.PageURL[:strings.LastIndex(read.option.PageURL, "/")+1]
 	}
 	toAbsoluteURI := func(url string) string {
+		if len(url) == 0 {
+			return ""
+		}
 		if url[0] == '#' || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 			return url
 		} else if url[0] == '/' {
@@ -288,7 +301,28 @@ func (read *Readability) grabArticle() *goquery.Selection {
 			if _, has := defaultTagsToScore[node.Data]; has {
 				selectionsToScore = append(selectionsToScore, sel)
 			}
+			// 将所有没有 children 的 div 转换为 p
 			if node.Data == "div" {
+				// 将短语内容分段。
+				var p *html.Node
+				childNode := node.FirstChild
+				for childNode != nil {
+					childSel := read.dom.FindNodes(childNode)
+					nextSibling := childNode.NextSibling
+					if read.isPhrasingContent(childNode) {
+						if p != nil {
+							nodeAppendChild(childNode, p, false)
+						} else if childNode.Type != html.TextNode ||
+							len(strings.TrimSpace(childSel.Text())) > 0 {
+							p = read.createSelection("p").Get(0)
+							nodeAppendChild(childNode, p, true)
+						}
+					} else {
+						p = nil
+					}
+					childNode = nextSibling
+				}
+
 				// 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
 				if hasSinglePInsideElement(sel) {
 					next := getNextSelection(sel, true)
@@ -300,7 +334,9 @@ func (read *Readability) grabArticle() *goquery.Selection {
 					// 节点不含有块级元素
 					read.replaceSelectionTags(sel, "p")
 					selectionsToScore = append(selectionsToScore, sel)
-				} else {
+				}
+
+				/*else {
 					// 含有块级元素
 					for node := sel.Get(0).FirstChild; node != nil; node = node.NextSibling {
 						if node.Type == html.TextNode && len(ts(node.Data)) > 0 {
@@ -320,7 +356,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 							ts.SetText(tt)
 						}
 					}
-				}
+				}*/
 			}
 			sel = getNextSelection(sel, false)
 		}
@@ -595,10 +631,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 			dn := div.Get(0)
 			for ch != nil {
 				t := ch.NextSibling
-				ch.PrevSibling = nil
-				ch.NextSibling = nil
-				ch.Parent = nil
-				dn.AppendChild(ch)
+				nodeAppendChild(ch, dn, false)
 				ch = t
 			}
 			articleContent.Get(0).FirstChild = div.Get(0)
@@ -653,6 +686,16 @@ func (read *Readability) grabArticle() *goquery.Selection {
 			return articleContent
 		}
 	}
+}
+
+func nodeAppendChild(child *html.Node, parent *html.Node, replace bool) {
+	if replace {
+		child.Parent.RemoveChild(child)
+	}
+	child.PrevSibling = nil
+	child.NextSibling = nil
+	child.Parent = nil
+	parent.AppendChild(child)
 }
 
 // best way to create element in GoQuery
@@ -930,16 +973,14 @@ func cleanStyles(s *goquery.Selection) {
 	if s.Length() == 0 || s.Get(0).Data == "svg" {
 		return
 	}
-	if s.AttrOr("class", "") != "readability-styled" {
-		// 删除`style`和不推荐的表示属性
-		for _, style := range presentationalAttributes {
-			s.RemoveAttr(style)
-		}
-		for _, tag := range deprecatedSizeAttributeElem {
-			if strings.Contains(s.Get(0).Data, tag) {
-				s.RemoveAttr("width")
-				s.RemoveAttr("height")
-			}
+	// 删除`style`和不推荐的表示属性
+	for _, style := range presentationalAttributes {
+		s.RemoveAttr(style)
+	}
+	for _, tag := range deprecatedSizeAttributeElem {
+		if strings.Contains(s.Get(0).Data, tag) {
+			s.RemoveAttr("width")
+			s.RemoveAttr("height")
 		}
 	}
 	s.Children().Each(func(i int, is *goquery.Selection) {
@@ -1065,6 +1106,21 @@ func hasSinglePInsideElement(s *goquery.Selection) bool {
 		return false
 	}
 	return ts(s.Children().Text()) == ts(s.Text())
+}
+
+// 确定节点是否符合短语内容。
+func (read *Readability) isPhrasingContent(n *html.Node) bool {
+	if n != nil && n.Type == html.TextNode || inSlice(phrasingElements, n.Data) {
+		return true
+	}
+	innerN := n.FirstChild
+	for innerN != nil {
+		if !read.isPhrasingContent(innerN) {
+			return false
+		}
+		innerN = innerN.NextSibling
+	}
+	return true
 }
 
 // 删除并获取下一个
@@ -1312,11 +1368,7 @@ func (read *Readability) replaceBrs() {
 				}
 				// 否则将节点添加为 <p> 的子节点
 				temp := next.NextSibling
-				next.Parent.RemoveChild(next)
-				next.Parent = nil
-				next.PrevSibling = nil
-				next.NextSibling = nil
-				pNode.AppendChild(next)
+				nodeAppendChild(next, pNode, true)
 				next = temp
 			}
 		}
@@ -1351,6 +1403,15 @@ func (read *Readability) replaceSelectionTags(s *goquery.Selection, tag string) 
 		n.Data = tag
 		n.Namespace = tag
 	})
+}
+
+func inSlice(s []string, i string) bool {
+	for _, v := range s {
+		if v == i {
+			return true
+		}
+	}
+	return false
 }
 
 // 调试日志

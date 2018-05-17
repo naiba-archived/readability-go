@@ -13,8 +13,6 @@ import (
 
 func TestParse(t *testing.T) {
 	pageUrls := []string{
-		"https://www.lifelonglearning.cc/p82_interview.html",
-		"https://www.qdaily.com/articles/52259.html",
 		"https://www.cnblogs.com/163yun/p/8867738.html",
 	}
 	for page := 0; page < len(pageUrls); page++ {
@@ -26,7 +24,7 @@ func TestParse(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		article, err := New(Option{Debug: false, PageURL: pageUrls[page]}).Parse(string(body))
+		article, err := New(Option{Debug: true, PageURL: pageUrls[page]}).Parse(string(body))
 		if err != nil {
 			t.Log(err)
 		} else {
