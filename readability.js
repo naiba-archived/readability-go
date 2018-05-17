@@ -707,38 +707,6 @@ Readability.prototype = {
         return node && node.nextElementSibling;
     },
 
-    /**
-     * 像_getNextNode一样，但是是对于
-     * 没有 firstElementChild / nextElementSibling 的DOM实现
-     */
-    _getNextNodeNoElementProperties: function (node, ignoreSelfAndKids) {
-
-        function nextSiblingEl(n) {
-            do {
-                n = n.nextSibling;
-            } while (n && n.nodeType !== n.ELEMENT_NODE);
-            return n;
-        }
-
-        // 如果 ignoreSelfAndKids 不为 true 且 node 有 children 返回第一个 children
-        if (!ignoreSelfAndKids && node.children[0]) {
-            return node.children[0];
-        }
-        // 兄弟节点
-        var next = nextSiblingEl(node);
-        if (next) {
-            return next;
-        }
-        // 最后，向上移动父节点 并 找到一个兄弟节点
-        //（因为这是深度优先遍历，我们已经看到了父节点本身）。
-        do {
-            node = node.parentNode;
-            if (node)
-                next = nextSiblingEl(node);
-        } while (node && !next);
-        return node && next;
-    },
-
     _checkByline: function (node, matchString) {
         if (this._articleByline) {
             return false;
@@ -803,6 +771,12 @@ Readability.prototype = {
             while (node) {
                 // 元素类名和ID
                 var matchString = node.className + " " + node.id;
+
+                if (!this._isProbablyVisible(node)) {
+                    this.log("Removing hidden node - " + matchString);
+                    node = this._removeAndGetNext(node);
+                    continue;
+                }
 
                 // Check to see if this node is a byline, and remove it if it is.
                 // 如果是作者信息 node，删除并将指针移到下一个 node
@@ -1803,6 +1777,11 @@ Readability.prototype = {
         this._flags = this._flags & ~flag;
     },
 
+    _isProbablyVisible: function (node) {
+        return node.style.display != "none" && !node.hasAttribute("hidden");
+    },
+
+
     /**
      * Decides whether or not the document is reader-able without parsing the whole thing.
      *
@@ -1827,9 +1806,9 @@ Readability.prototype = {
             nodes = [].concat.apply(Array.from(set), nodes);
         }
 
-        // FIXME we should have a fallback for helperIsVisible, but this is
-        // problematic because of jsdom's elem.style handling - see
-        // https://github.com/mozilla/readability/pull/186 for context.
+        if (!helperIsVisible) {
+            helperIsVisible = this._isProbablyVisible;
+        }
 
         var score = 0;
         // This is a little cheeky, we use the accumulator 'score' to decide what to return from
@@ -1883,10 +1862,6 @@ Readability.prototype = {
             }
         }
 
-        // 网页的第一个子 Element
-        if (typeof this._doc.documentElement.firstElementChild === "undefined") {
-            this._getNextNode = this._getNextNodeNoElementProperties;
-        }
         // 移除所有的script标签
         this._removeScripts(this._doc);
 

@@ -69,9 +69,9 @@ var (
 
 const (
 	flagStripUnlikely      = iota
-	flagWeightClasses
-	flagCleanConditionally
-	defaultCharThreshold
+	flagWeightClasses      
+	flagCleanConditionally 
+	defaultCharThreshold   
 )
 
 //Option 解析配置
@@ -274,7 +274,14 @@ func (read *Readability) grabArticle() *goquery.Selection {
 			matchString, _ := sel.Attr("id")
 			class, _ := sel.Attr("class")
 			matchString += " " + class
-			// 作者信息行
+
+			if !read.isProbablyVisible(sel) {
+				read.l("Removing hidden node - ", matchString)
+				sel = removeAndGetNext(sel)
+				continue
+			}
+
+			// 如果是作者信息 node，删除并将指针移到下一个 node
 			if read.checkByline(sel, matchString) {
 				read.l("checkByline", node.Data, node.Attr)
 				sel = removeAndGetNext(sel)
@@ -1412,6 +1419,11 @@ func (read *Readability) l(ms ...interface{}) {
 func (read *Readability) isWhitespace(node *html.Node) bool {
 	return (node.Type == html.TextNode && len(strings.TrimSpace(node.Data)) == 0) ||
 		(node.Type == html.ElementNode && node.Data == "br")
+}
+func (read *Readability) isProbablyVisible(sel *goquery.Selection) bool {
+	m, _ := regexp.MatchString(`display:\s*none`, sel.AttrOr("style", ""))
+	_, m1 := sel.Attr("hidden")
+	return !m && !m1
 }
 
 // TrimSpace
