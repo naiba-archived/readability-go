@@ -324,7 +324,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 				}
 
 				// 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
-				if hasSinglePInsideElement(sel) {
+				if hasSinglePInsideElement(sel) && getLinkDensity(sel) < 0.25 {
 					next := getNextSelection(sel, true)
 					sel.ReplaceWithSelection(sel.Children().First())
 					selectionsToScore = append(selectionsToScore, sel)

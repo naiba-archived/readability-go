@@ -867,12 +867,13 @@ Readability.prototype = {
                     // algorithm with DIVs with are, in practice, paragraphs.
 
                     // 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
-                    if (this._hasSinglePInsideElement(node)) {
+                    if (this._hasSinglePInsideElement(node) && this._getLinkDensity(node) < 0.25) {
                         var newNode = node.children[0];
                         node.parentNode.replaceChild(newNode, node);
                         node = newNode;
                         elementsToScore.push(node);
-                    } else if (!this._hasChildBlockElement(node)) {
+                    }
+                    else if (!this._hasChildBlockElement(node)) {
                         // 确定元素含有的都不是块级元素
                         node = this._setNodeTag(node, "P");
                         elementsToScore.push(node);
