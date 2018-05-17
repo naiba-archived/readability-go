@@ -501,12 +501,16 @@ Readability.prototype = {
                             break;
                     }
 
+                    if (!this._isPhrasingContent(next)) break;
+
                     // Otherwise, make this node a child of the new <p>.
                     // 否则将节点添加为 <p> 的子节点
                     var sibling = next.nextSibling;
                     p.appendChild(next);
                     next = sibling;
                 }
+
+                while (p.lastChild && this._isWhitespace(p.lastChild)) p.removeChild(p.lastChild);
             }
         });
     },
@@ -849,13 +853,13 @@ Readability.prototype = {
                         if (this._isPhrasingContent(childNode)) {
                             if (p !== null) {
                                 p.appendChild(childNode);
-                            } else if (childNode.nodeType !== this.TEXT_NODE ||
-                                childNode.textContent.trim().length > 0) {
+                            } else if (!this._isWhitespace(childNode)) {
                                 p = doc.createElement('p');
                                 node.replaceChild(p, childNode);
                                 p.appendChild(childNode);
                             }
-                        } else {
+                        } else if (p !== null) {
+                            while (p.lastChild && this._isWhitespace(p.lastChild)) p.removeChild(p.lastChild);
                             p = null;
                         }
                         childNode = nextSibling;
@@ -1391,6 +1395,12 @@ Readability.prototype = {
             ((node.tagName === "A" || node.tagName === "DEL" || node.tagName === "INS") &&
                 this._everyNode(node.childNodes, this._isPhrasingContent));
     },
+
+    _isWhitespace: function (node) {
+        return (node.nodeType === this.TEXT_NODE && node.textContent.trim().length === 0) ||
+            (node.nodeType === this.ELEMENT_NODE && node.tagName === "BR");
+    },
+
 
     /**
      * Get the inner text of a node - cross browser compatibly.

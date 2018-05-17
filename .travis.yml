@@ -1,11 +1,8 @@
 language: go
 go:
   - master
-addons:
-    apt:
-      update: true
 before_install:
   - go get golang.org/x/lint/golint
 script:
   - go list ./... | xargs -L1 golint
-  - go test -v -race -cover -coverprofile=coverage.out ./...
+  - go test -v -race -cover ./...

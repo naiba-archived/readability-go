@@ -69,9 +69,9 @@ var (
 
 const (
 	flagStripUnlikely      = iota
-	flagWeightClasses      
-	flagCleanConditionally 
-	defaultCharThreshold   
+	flagWeightClasses
+	flagCleanConditionally
+	defaultCharThreshold
 )
 
 //Option 解析配置
@@ -307,17 +307,18 @@ func (read *Readability) grabArticle() *goquery.Selection {
 				var p *html.Node
 				childNode := node.FirstChild
 				for childNode != nil {
-					childSel := read.dom.FindNodes(childNode)
 					nextSibling := childNode.NextSibling
 					if read.isPhrasingContent(childNode) {
 						if p != nil {
 							nodeAppendChild(childNode, p, false)
-						} else if childNode.Type != html.TextNode ||
-							len(strings.TrimSpace(childSel.Text())) > 0 {
+						} else if !read.isWhitespace(childNode) {
 							p = read.createSelection("p").Get(0)
 							nodeAppendChild(childNode, p, true)
 						}
-					} else {
+					} else if p != nil {
+						for p.LastChild != nil && read.isWhitespace(p.LastChild) {
+							p.RemoveChild(p.LastChild)
+						}
 						p = nil
 					}
 					childNode = nextSibling
@@ -335,28 +336,6 @@ func (read *Readability) grabArticle() *goquery.Selection {
 					read.replaceSelectionTags(sel, "p")
 					selectionsToScore = append(selectionsToScore, sel)
 				}
-
-				/*else {
-					// 含有块级元素
-					for node := sel.Get(0).FirstChild; node != nil; node = node.NextSibling {
-						if node.Type == html.TextNode && len(ts(node.Data)) > 0 {
-							ts := read.dom.FindNodes(node)
-							tt := node.Data
-							read.replaceSelectionTags(ts, "p")
-							node.Attr = []html.Attribute{
-								{
-									Key: "class",
-									Val: "readability-styled",
-								},
-								{
-									Key: "style",
-									Val: "display:inline;",
-								},
-							}
-							ts.SetText(tt)
-						}
-					}
-				}*/
 			}
 			sel = getNextSelection(sel, false)
 		}
@@ -1366,10 +1345,19 @@ func (read *Readability) replaceBrs() {
 						break
 					}
 				}
+
+				if !read.isPhrasingContent(next) {
+					break
+				}
+
 				// 否则将节点添加为 <p> 的子节点
 				temp := next.NextSibling
 				nodeAppendChild(next, pNode, true)
 				next = temp
+			}
+
+			for pNode.LastChild != nil && read.isWhitespace(pNode.LastChild) {
+				pNode.RemoveChild(pNode.LastChild)
 			}
 		}
 	})
@@ -1419,6 +1407,11 @@ func (read *Readability) l(ms ...interface{}) {
 	if read.option.Debug {
 		log.Println(ms...)
 	}
+}
+
+func (read *Readability) isWhitespace(node *html.Node) bool {
+	return (node.Type == html.TextNode && len(strings.TrimSpace(node.Data)) == 0) ||
+		(node.Type == html.ElementNode && node.Data == "br")
 }
 
 // TrimSpace
