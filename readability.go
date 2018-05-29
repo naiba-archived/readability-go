@@ -8,14 +8,16 @@ package readability
 import (
 	"errors"
 	"fmt"
-	"github.com/PuerkitoBio/goquery"
-	"golang.org/x/net/html"
 	"log"
 	"math"
+
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/net/html"
 )
 
 var (
@@ -68,10 +70,10 @@ var (
 )
 
 const (
-	flagStripUnlikely      = iota
-	flagWeightClasses      
-	flagCleanConditionally 
-	defaultCharThreshold   
+	flagStripUnlikely = iota
+	flagWeightClasses
+	flagCleanConditionally
+	defaultCharThreshold
 )
 
 //Option 解析配置
@@ -123,10 +125,10 @@ func New(o Option) *Readability {
 	}
 	o.ClassesToPreserve = append(o.ClassesToPreserve, classesToPreserve...)
 	return &Readability{article: new(Article),
-		scoreList: make(map[*html.Node]float64),
+		scoreList:            make(map[*html.Node]float64),
 		readabilityDataTable: make(map[*html.Node]bool),
-		attempts: make([]*goquery.Selection, 0),
-		option: &o,
+		attempts:             make([]*goquery.Selection, 0),
+		option:               &o,
 	}
 }
 
@@ -1262,9 +1264,10 @@ func (read *Readability) getArticleTitle() string {
 	} else if strings.Index("：", originTitle) != -1 || strings.Index(":", originTitle) != -1 {
 		// 判断是否有 "：" 符号
 		flag := false
+		trimTitle := ts(title)
 		read.dom.Find("h1,h2").EachWithBreak(func(i int, s *goquery.Selection) bool {
 			// 提取的标题是否在正文中存在
-			if ts(s.Text()) == title {
+			if ts(s.Text()) == trimTitle {
 				flag = true
 			}
 			return !flag
