@@ -14,7 +14,6 @@ import (
 func TestParse(t *testing.T) {
 	pageUrls := []string{
 		"https://www.jianshu.com/p/725c7dc55d58",
-		"https://www.cnblogs.com/163yun/p/8867738.html",
 	}
 	for page := 0; page < len(pageUrls); page++ {
 		resp, err := http.Get(pageUrls[page])
@@ -27,7 +26,7 @@ func TestParse(t *testing.T) {
 		}
 		article, err := New(Option{Debug: true, PageURL: pageUrls[page]}).Parse(string(body))
 		if err != nil {
-			t.Log(err)
+			panic(err)
 		} else {
 			t.Log("标题", article.Title)
 			t.Log("链接", article.URL)

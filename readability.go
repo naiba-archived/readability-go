@@ -226,12 +226,12 @@ func (read *Readability) fixRelativeUris(articleContent *goquery.Selection) {
 		if len(url) == 0 {
 			return ""
 		}
-		if url[0] == '#' || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		if strings.HasPrefix(url, "#") || strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "//") {
 			return url
-		} else if url[0] == '/' {
-			return baseURL + url
+		} else if strings.HasPrefix(url, "/") {
+			return documentURL + url
 		} else {
-			return documentURL + "/" + url
+			return baseURL + "/" + url
 		}
 	}
 	articleContent.Find("a").Each(func(i int, a *goquery.Selection) {
@@ -786,7 +786,7 @@ func (read *Readability) cleanHeaders(s *goquery.Selection) {
 func cleanMatchedNodes(s *goquery.Selection, m *regexp.Regexp) {
 	end := getNextSelection(s, true)
 	next := getNextSelection(s, false)
-	for next != nil && (end == nil || next.Get(0) != end.Get(0)) {
+	for next != nil && end != nil && next.Get(0) != end.Get(0) {
 		if m.MatchString(next.AttrOr("class", "") + " " + next.AttrOr("id", "")) {
 			next = removeAndGetNext(next)
 		} else {
@@ -1137,21 +1137,21 @@ func getNextSelection(s *goquery.Selection, ignoreSelfAndChildren bool) *goquery
 		}
 	}
 	// 然后是兄弟 element
-	if s.Next().Length() > 0 {
-		return s.Next()
+	t = s.Next()
+	if t.Length() > 0 {
+		return t
 	}
 	// 最后，父节点的兄弟 element
 	//（因为这是深度优先遍历，我们已经遍历了父节点本身）。
 	for {
 		s = s.Parent()
 		t = s.Next()
-		if t.Length() == 0 {
-			if s.Parent().Length() > 0 {
-				continue
+		if s.Length() > 0 {
+			if t.Length() > 0 {
+				return t
 			}
-			break
 		} else {
-			return t
+			break
 		}
 	}
 	return nil
