@@ -267,15 +267,13 @@ func (read *Readability) grabArticle() *goquery.Selection {
 	for {
 		selectionsToScore := make([]*goquery.Selection, 0)
 		stripUnlikelyCandidates := flagIsActive(flagStripUnlikely)
-		sel := read.dom.First()
+		sel := page.First()
 		for sel != nil {
 			node := sel.Get(0)
 
 			// 首先，节点预处理。 清理看起来很糟糕的垃圾节点（比如类名为“comment”的垃圾节点），
 			// 并将div转换为P标签，清理空节点。
-			matchString, _ := sel.Attr("id")
-			class, _ := sel.Attr("class")
-			matchString += " " + class
+			matchString := sel.AttrOr("class", "") + " " + sel.AttrOr("id", "")
 
 			if !read.isProbablyVisible(sel) {
 				read.l("Removing hidden node - ", matchString)
@@ -289,6 +287,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 				sel = removeAndGetNext(sel)
 				continue
 			}
+
 			// 清理垃圾标签
 			if stripUnlikelyCandidates && len(ts(matchString)) > 0 {
 				if unlikelyCandidatesPattern.MatchString(matchString) &&
@@ -300,6 +299,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 					continue
 				}
 			}
+
 			// 清理不含任何内容的 DIV, SECTION, 和 HEADER
 			tags := map[string]int{"div": 0, "section": 0, "header": 0, "h1": 0, "h2": 0, "h3": 0, "h4": 0, "h5": 0, "h6": 0}
 			if _, has := tags[node.Data]; has && len(ts(sel.Text())) == 0 {
@@ -1127,9 +1127,11 @@ func getNextSelection(s *goquery.Selection, ignoreSelfAndChildren bool) *goquery
 	if s.Length() == 0 {
 		return nil
 	}
+	var t *goquery.Selection
 	// 如果 ignoreSelfAndKids 不为 true 且 node 有子 element 返回第一个子 element
-	if !ignoreSelfAndChildren && s.Children().Length() > 0 {
-		t := s.Children().First()
+	t = s.Children()
+	if !ignoreSelfAndChildren && t.Length() > 0 {
+		t = t.First()
 		if t.Length() > 0 {
 			return t
 		}
@@ -1142,7 +1144,7 @@ func getNextSelection(s *goquery.Selection, ignoreSelfAndChildren bool) *goquery
 	//（因为这是深度优先遍历，我们已经遍历了父节点本身）。
 	for {
 		s = s.Parent()
-		t := s.Next()
+		t = s.Next()
 		if t.Length() == 0 {
 			if s.Parent().Length() > 0 {
 				continue

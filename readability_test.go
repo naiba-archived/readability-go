@@ -13,6 +13,7 @@ import (
 
 func TestParse(t *testing.T) {
 	pageUrls := []string{
+		"https://www.jianshu.com/p/725c7dc55d58",
 		"https://www.cnblogs.com/163yun/p/8867738.html",
 	}
 	for page := 0; page < len(pageUrls); page++ {
