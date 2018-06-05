@@ -1324,6 +1324,41 @@ func (read *Readability) prepDocument() {
 
 	// 将所有的font替换成span
 	read.replaceSelectionTags(read.dom.Find("font"), "span")
+
+	// 清除所有注释节点
+	removeComments(read.dom.Get(0))
+}
+
+// 清除所有注释节点
+func removeComments(pNode *html.Node) {
+	for pNode != nil {
+		tmp := pNode
+		if pNode.Type == html.CommentNode {
+			tmp = pNode.NextSibling
+			if tmp == nil {
+				tmp = pNode.Parent.NextSibling
+			}
+			pNode.Parent.RemoveChild(pNode)
+			pNode = tmp
+			continue
+		}
+		pNode = tmp.FirstChild
+		if pNode != nil {
+			continue
+		}
+		pNode = tmp.NextSibling
+		if pNode != nil {
+			continue
+		}
+		tmp = tmp.Parent
+		for tmp != nil {
+			pNode = tmp.NextSibling
+			if pNode != nil {
+				break
+			}
+			tmp = tmp.Parent
+		}
+	}
 }
 
 // 将多个连续的<br>替换成<p>
