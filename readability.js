@@ -243,9 +243,9 @@ Readability.prototype = {
    * @param  Function fn       The iterate function.
    * @return Boolean
    */
-  _everyNode: function(nodeList, fn) {
-    return Array.prototype.every.call(nodeList, fn, this);
-  },
+    _everyNode: function (nodeList, fn) {
+        return Array.prototype.every.call(nodeList, fn, this);
+    },
 
     /**
      * Concat all nodelists passed as arguments.
@@ -463,8 +463,8 @@ Readability.prototype = {
     _nextElement: function (node) {
         var next = node;
         while (next
-        && (next.nodeType != this.ELEMENT_NODE)
-        && this.REGEXPS.whitespace.test(next.textContent)) {
+            && (next.nodeType != this.ELEMENT_NODE)
+            && this.REGEXPS.whitespace.test(next.textContent)) {
             next = next.nextSibling;
         }
         return next;
@@ -645,6 +645,20 @@ Readability.prototype = {
             if (next && next.tagName == "P")
                 br.parentNode.removeChild(br);
         });
+
+        // Remove single-cell tables
+        // 移除单单元格表格
+        this._forEachNode(this._getAllNodesWithTag(articleContent, ["table"]), function (table) {
+            var tbody = this._hasSingleTagInsideElement(table, "TBODY") ? table.firstElementChild : table;
+            if (this._hasSingleTagInsideElement(tbody, "TR")) {
+                var row = tbody.firstElementChild;
+                if (this._hasSingleTagInsideElement(row, "TD")) {
+                    var cell = row.firstElementChild;
+                    cell = this._setNodeTag(cell, this._everyNode(cell.childNodes, this._isPhrasingContent) ? "P" : "DIV");
+                    table.parentNode.replaceChild(cell, table);
+                }
+            }
+        });
     },
 
     /**
@@ -657,7 +671,7 @@ Readability.prototype = {
      * @return void
      **/
     _initializeNode: function (node) {
-        node.readability = {"contentScore": 0};
+        node.readability = { "contentScore": 0 };
 
         switch (node.tagName) {
             case 'DIV':
@@ -888,7 +902,7 @@ Readability.prototype = {
              **/
             var candidates = [];
             this._forEachNode(elementsToScore, function (elementToScore) {
-                if (!elementToScore.parentNode || typeof(elementToScore.parentNode.tagName) === 'undefined')
+                if (!elementToScore.parentNode || typeof (elementToScore.parentNode.tagName) === 'undefined')
                     return;
 
                 // If this paragraph is less than 25 characters, don't even count it.
@@ -919,10 +933,10 @@ Readability.prototype = {
                 // Initialize and score ancestors.
                 // 给祖先初始化并评分。
                 this._forEachNode(ancestors, function (ancestor, level) {
-                    if (!ancestor.tagName || !ancestor.parentNode || typeof(ancestor.parentNode.tagName) === 'undefined')
+                    if (!ancestor.tagName || !ancestor.parentNode || typeof (ancestor.parentNode.tagName) === 'undefined')
                         return;
 
-                    if (typeof(ancestor.readability) === 'undefined') {
+                    if (typeof (ancestor.readability) === 'undefined') {
                         this._initializeNode(ancestor);
                         candidates.push(ancestor);
                     }
@@ -1192,15 +1206,15 @@ Readability.prototype = {
 
                 if (this._flagIsActive(this.FLAG_STRIP_UNLIKELYS)) {
                     this._removeFlag(this.FLAG_STRIP_UNLIKELYS);
-                    this._attempts.push({articleContent: articleContent, textLength: textLength});
+                    this._attempts.push({ articleContent: articleContent, textLength: textLength });
                 } else if (this._flagIsActive(this.FLAG_WEIGHT_CLASSES)) {
                     this._removeFlag(this.FLAG_WEIGHT_CLASSES);
-                    this._attempts.push({articleContent: articleContent, textLength: textLength});
+                    this._attempts.push({ articleContent: articleContent, textLength: textLength });
                 } else if (this._flagIsActive(this.FLAG_CLEAN_CONDITIONALLY)) {
                     this._removeFlag(this.FLAG_CLEAN_CONDITIONALLY);
-                    this._attempts.push({articleContent: articleContent, textLength: textLength});
+                    this._attempts.push({ articleContent: articleContent, textLength: textLength });
                 } else {
-                    this._attempts.push({articleContent: articleContent, textLength: textLength});
+                    this._attempts.push({ articleContent: articleContent, textLength: textLength });
                     // No luck after removing flags, just return the longest text we found during the different loops
                     this._attempts.sort(function (a, b) {
                         return a.textLength < b.textLength;
@@ -1335,23 +1349,26 @@ Readability.prototype = {
     },
 
     /**
-     * Check if this node has only whitespace and a single P element
+     * Check if this node has only whitespace and a single element with given tag
      * Returns false if the DIV node contains non-empty text nodes
-     * or if it contains no P or more than 1 element.
-     *
-     * 检查此节点是否只有空白和单个P元素如果DIV节点包含非空文本节点或者它不包含P或多个元素，则返回false。
+     * or if it contains no element with given tag or more than 1 element.
+     * 
+     * 检查此节点是否只有空白，并且具有给定标记的单个元素如果DIV节点包含非空文本节点，或者它不包含具有给定标记或多个元素的元素，则返回false。
      *
      * @param Element
+     * @param string tag of child element
      **/
-    _hasSinglePInsideElement: function (element) {
-        // There should be exactly 1 element child which is a P:
-        if (element.children.length != 1 || element.children[0].tagName !== "P") {
-            return false;
+    _hasSingleTagInsideElement: function(element, tag) {
+        // There should be exactly 1 element child with given tag
+        // 子节点个数大于一，或者第一个子节点不是本身
+        if (element.children.length != 1 || element.children[0].tagName !== tag) {
+        return false;
         }
 
         // And there should be no text nodes with real content
-        return !this._someNode(element.childNodes, function (node) {
-            return node.nodeType === this.TEXT_NODE &&
+        // 并且不应该有真实内容的文本节点
+        return !this._someNode(element.childNodes, function(node) {
+        return node.nodeType === this.TEXT_NODE &&
                 this.REGEXPS.hasContent.test(node.textContent);
         });
     },
@@ -1494,7 +1511,7 @@ Readability.prototype = {
 
         // Look for a special classname
         // 寻找一个特殊的类名
-        if (typeof(e.className) === 'string' && e.className !== '') {
+        if (typeof (e.className) === 'string' && e.className !== '') {
             if (this.REGEXPS.negative.test(e.className))
                 weight -= 25;
 
@@ -1504,7 +1521,7 @@ Readability.prototype = {
 
         // Look for a special ID
         // 寻找一个特殊的ID
-        if (typeof(e.id) === 'string' && e.id !== '') {
+        if (typeof (e.id) === 'string' && e.id !== '') {
             if (this.REGEXPS.negative.test(e.id))
                 weight -= 25;
 
@@ -1607,7 +1624,7 @@ Readability.prototype = {
             }
             columns = Math.max(columns, columnsInThisRow);
         }
-        return {rows: rows, columns: columns};
+        return { rows: rows, columns: columns };
     },
 
     /**

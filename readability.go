@@ -334,7 +334,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 				}
 
 				// 将只包含一个 p 标签的 div 标签去掉，将 p 提出来
-				if hasSinglePInsideElement(sel) && getLinkDensity(sel) < 0.25 {
+				if hasSingleTagInsideElement(sel, "p") && getLinkDensity(sel) < 0.25 {
 					next := getNextSelection(sel, true)
 					sel.ReplaceWithSelection(sel.Children().First())
 					selectionsToScore = append(selectionsToScore, sel)
@@ -768,6 +768,30 @@ func (read *Readability) prepArticle(s *goquery.Selection) {
 			br.Remove()
 		}
 	})
+
+	// 移除单单元格表格
+	s.Find("table").Each(func(i int, table *goquery.Selection) {
+		var tbody *goquery.Selection
+		tag := "p"
+		if hasSingleTagInsideElement(table, "tbody") {
+			tbody = table.Children().First()
+		} else {
+			tbody = table
+		}
+		if hasSingleTagInsideElement(tbody, "tr") {
+			tbody = tbody.Children().First()
+			if hasSingleTagInsideElement(tbody, "td") {
+				tbody = tbody.Children().First()
+				tbody.Each(func(i int, cell *goquery.Selection) {
+					if !read.isPhrasingContent(cell.Get(0)) {
+						tag = "div"
+					}
+				})
+				tbody.Get(0).Data = tag
+				table.ReplaceWithSelection(tbody)
+			}
+		}
+	})
 }
 
 // 清除元素中的虚假标题。 检查类名和链接密度。
@@ -1088,12 +1112,15 @@ func hasChildBlockElement(s *goquery.Selection) bool {
 	return flag
 }
 
-// 是不是只包含一个 p 标签的节点
-func hasSinglePInsideElement(s *goquery.Selection) bool {
-	if s.Children().Length() != 1 || s.Children().Get(0).Data != "p" {
+// 检查此节点是否只有空白，并且具有给定标记的单个元素如果DIV节点包含非空文本节点，
+// 或者它不包含具有给定标记或多个元素的元素，则返回false。
+func hasSingleTagInsideElement(s *goquery.Selection, tag string) bool {
+	// 子节点个数大于一，或者第一个子节点不是本身
+	if s.Children().Length() != 1 || s.Children().Get(0).Data != tag {
 		return false
 	}
-	return ts(s.Children().Text()) == ts(s.Text())
+	// 并且不应该有真实内容的文本节点
+	return len(ts(s.Text())) == 0
 }
 
 // 确定节点是否符合短语内容。
