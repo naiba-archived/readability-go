@@ -1406,6 +1406,10 @@ func (read *Readability) replaceBrs() {
 			for pNode.LastChild != nil && read.isWhitespace(pNode.LastChild) {
 				pNode.RemoveChild(pNode.LastChild)
 			}
+
+			if pNode.Parent.Data == "p" {
+				pNode.Parent.Data = "div"
+			}
 		}
 	})
 }
