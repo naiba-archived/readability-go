@@ -1,8 +1,10 @@
-# Readability 网页正文提取
+# Readability
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/naiba/go-readability)](https://goreportcard.com/report/github.com/naiba/go-readability)  [![Build status](https://travis-ci.com/naiba/go-readability.svg?branch=master)](https://travis-ci.com/naiba/go-readability)
 
-Arc90 **Readability** 网页正文提取算法的 Go 实现。
+The Go implementation of the Arc90 Readability webpage text extraction algorithm.
+
+- [JavaScript](https://github.com/mozilla/readability) implementation
 
 ### License
 
