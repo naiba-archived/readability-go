@@ -51,7 +51,7 @@ var (
 	unlikelyCandidatesPattern   = regexp.MustCompile(`(?i)banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
 	negativePattern             = regexp.MustCompile(`(?i)hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
 	positivePattern             = regexp.MustCompile(`(?i)article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
-	videoLinkPattern            = regexp.MustCompile(`(?i)\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.youku)\.com`)
+	videoLinkPattern            = regexp.MustCompile(`(?i)\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.youku|v\.qq)\.com`)
 	sharePattern                = regexp.MustCompile(`(?i)share`)
 	flags                       = map[int]bool{flagStripUnlikely: true, flagCleanConditionally: true, flagWeightClasses: true}
 	presentationalAttributes    = []string{"align", "background", "bgcolor", "border", "cellpadding", "cellspacing", "frame", "hspace", "rules", "style", "valign", "vspace"}
@@ -459,6 +459,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 				Namespace: "div",
 				Data:      "div",
 			}}
+			page = read.dom.Find("body").First()
 			page.Children().Each(func(i int, s *goquery.Selection) {
 				read.l("Moving child out:", s.Get(0))
 				topCandidate.AppendSelection(s)
@@ -551,7 +552,8 @@ func (read *Readability) grabArticle() *goquery.Selection {
 		for sibling.Length() > 0 {
 			willAppend := false
 			var next *goquery.Selection
-			read.l("Looking at sibling node:", sibling.Get(0).Data, sibling.Get(0).Attr, read.scoreList[sibling.Get(0)])
+			read.l("Looking at sibling node:", sibling.Get(0).Data, sibling.Get(0).Attr)
+			read.l("Sibling has score", read.scoreList[sibling.Get(0)])
 			if sibling.Get(0) == topCandidate.Get(0) {
 				willAppend = true
 			} else {
@@ -581,6 +583,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 			}
 
 			if willAppend {
+				read.l("Appending node:", sibling.Get(0))
 				alter := map[string]int{
 					"div": 0, "article": 0, "section": 0, "p": 0,
 				}
@@ -588,6 +591,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 				if _, has := alter[sn.Data]; has {
 					sn.Data = "div"
 					sn.Namespace = "div"
+					read.l("Altering sibling:", sibling.Get(0), "to div.")
 				}
 				next = sibling.Next()
 				articleContent.AppendSelection(sibling)
@@ -1491,6 +1495,7 @@ func (read *Readability) isWhitespace(node *html.Node) bool {
 	return (node.Type == html.TextNode && len(strings.TrimSpace(node.Data)) == 0) ||
 		(node.Type == html.ElementNode && node.Data == "br")
 }
+
 func (read *Readability) isProbablyVisible(sel *goquery.Selection) bool {
 	m, _ := regexp.MatchString(`display:\s*none`, sel.AttrOr("style", ""))
 	_, m1 := sel.Attr("hidden")
