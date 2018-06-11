@@ -26,6 +26,7 @@ func TestParse(t *testing.T) {
 		}
 		article, err := New(Option{Debug: true, PageURL: pageUrls[page]}).Parse(string(body))
 		if err != nil {
+			t.Log("正文", string(body))
 			panic(err)
 		} else {
 			t.Log("标题", article.Title)
@@ -34,7 +35,7 @@ func TestParse(t *testing.T) {
 			t.Log("长度", article.Length)
 			t.Log("目录", article.Dir)
 			t.Log("摘要", article.Excerpt)
-			t.Log(article.Content)
+			t.Log("正文", article.Content)
 		}
 		resp.Body.Close()
 	}

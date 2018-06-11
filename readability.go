@@ -22,29 +22,29 @@ import (
 
 var (
 	whitespacePattern  = regexp.MustCompile(`\s{2,}`)
-	defaultTagsToScore = map[string]int{
-		"section": 0,
-		"h2":      0,
-		"h3":      0,
-		"h4":      0,
-		"h5":      0,
-		"h6":      0,
-		"p":       0,
-		"td":      0,
-		"pre":     0,
+	defaultTagsToScore = map[string]struct{}{
+		"section": {},
+		"h2":      {},
+		"h3":      {},
+		"h4":      {},
+		"h5":      {},
+		"h6":      {},
+		"p":       {},
+		"td":      {},
+		"pre":     {},
 	}
-	divToPElement = map[string]int{
-		"a":          0,
-		"blockquote": 0,
-		"dl":         0,
-		"div":        0,
-		"img":        0,
-		"ol":         0,
-		"p":          0,
-		"pre":        0,
-		"table":      0,
-		"ul":         0,
-		"select":     0,
+	divToPElement = map[string]struct{}{
+		"a":          {},
+		"blockquote": {},
+		"dl":         {},
+		"div":        {},
+		"img":        {},
+		"ol":         {},
+		"p":          {},
+		"pre":        {},
+		"table":      {},
+		"ul":         {},
+		"select":     {},
 	}
 	bylinePattern               = regexp.MustCompile(`(?i)byline|author|dateline|writtenby|p-author`)
 	okMaybeItsACandidatePattern = regexp.MustCompile(`(?i)and|article|body|column|main|shadow|app|container`)
