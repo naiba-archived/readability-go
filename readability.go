@@ -8,6 +8,7 @@ package readability
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 
@@ -17,10 +18,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/saintfish/chardet"
 	"golang.org/x/net/html"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/transform"
 )
 
 var (
+	chardetor          = chardet.NewHtmlDetector()
+	titleSplitPattern  = regexp.MustCompile(`(.*)[\|\-\\\/>»«<](.*)`)
 	whitespacePattern  = regexp.MustCompile(`\s{2,}`)
 	defaultTagsToScore = map[string]struct{}{
 		"section": {},
@@ -132,9 +139,32 @@ func New(o Option) *Readability {
 	}
 }
 
+//编码转换
+func convertCharset(htmlStr string) (string, error) {
+	res, err := chardetor.DetectBest([]byte(htmlStr))
+	if err != nil {
+		return "", err
+	}
+	switch res.Charset {
+	case "UTF-8":
+		return htmlStr, nil
+	case "GB-18030":
+		b, err := ioutil.ReadAll(transform.NewReader(strings.NewReader(htmlStr), simplifiedchinese.GB18030.NewDecoder()))
+		return string(b), err
+	case "Big5":
+		b, err := ioutil.ReadAll(transform.NewReader(strings.NewReader(htmlStr), traditionalchinese.Big5.NewDecoder()))
+		return string(b), err
+	}
+	return "", errors.New("Unsupported charset")
+}
+
 //Parse 进行解析
 func (read *Readability) Parse(s string) (*Article, error) {
 	var err error
+	s, err = convertCharset(s)
+	if err != nil {
+		return nil, err
+	}
 	read.dom, err = goquery.NewDocumentFromReader(strings.NewReader(s))
 	if err != nil {
 		return nil, err
@@ -1288,7 +1318,6 @@ func normalizeSpace(str string) string {
 
 // 获取文章标题
 func (read *Readability) getArticleTitle() string {
-	titleSplitPattern := regexp.MustCompile(`(.*)[\|\-\\\/>»«<](.*)`)
 	var title, originTitle string
 
 	// 从 title 标签获取标题
