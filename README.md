@@ -6,15 +6,16 @@ The Go implementation of the Arc90 Readability webpage text extraction algorithm
 
 一个 Go 实现的『网页正文提取』算法。
 
-### Usage
-view test file.
+## Usage
+pls view `test` file.
 
-请查看测试用例。
+请查看`测试`用例。
 
-### Other implementation
+## Implementation 
+- [PHP](https://github.com/feelinglucky/php-readability)
 - [JavaScript](https://github.com/mozilla/readability)
 
-### License
+## License
 
 ```
 Copyright (c) 2010 Arc90 Inc
