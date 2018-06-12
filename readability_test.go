@@ -30,10 +30,6 @@ func TestParse(t *testing.T) {
 			panic(err)
 		} else {
 			t.Log("标题", article.Title)
-			t.Log("链接", article.URL)
-			t.Log("作者", article.Byline)
-			t.Log("长度", article.Length)
-			t.Log("目录", article.Dir)
 			t.Log("摘要", article.Excerpt)
 			t.Log("正文", article.Content)
 		}

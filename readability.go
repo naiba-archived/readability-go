@@ -181,10 +181,10 @@ func (read *Readability) Parse(s string) (*Article, error) {
 		read.article.Byline = normalizeSpace(md.Byline)
 	}
 	read.article.URL = read.option.PageURL
-	read.article.TextContent = normalizeSpace(ts(articleContent.Text()))
-	read.article.Content, err = goquery.OuterHtml(articleContent)
+	read.article.TextContent = normalizeSpace(articleContent.Text())
+	read.article.Content, err = articleContent.Html()
 	read.article.Content = normalizeSpace(read.article.Content)
-	read.article.Length = len(read.article.TextContent)
+	read.article.Length = utf8.RuneCount([]byte(read.article.TextContent))
 	read.article.Excerpt = md.Excerpt
 
 	return read.article, err
@@ -1288,7 +1288,7 @@ func normalizeSpace(str string) string {
 
 // 获取文章标题
 func (read *Readability) getArticleTitle() string {
-	titleSplitPattern := regexp.MustCompile(`(.*)[\|\-\\\/>»](.*)`)
+	titleSplitPattern := regexp.MustCompile(`(.*)[\|\-\\\/>»«<](.*)`)
 	var title, originTitle string
 
 	// 从 title 标签获取标题
