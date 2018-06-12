@@ -11,7 +11,7 @@ pls view `test` file.
 
 请查看`测试`用例。
 
-## Implementation 
+## Others 
 - [PHP](https://github.com/feelinglucky/php-readability)
 - [JavaScript](https://github.com/mozilla/readability)
 
