@@ -163,6 +163,9 @@ func (read *Readability) Parse(s string) (*Article, error) {
 	// 后期处理
 	read.postProcessContent(articleContent)
 
+	// 清除所有注释和未使用的属性
+	removeCommentsAndUnusedAttr(articleContent.Get(0))
+
 	// 如果我们没有在文章的元数据中找到摘录，请使用文章的第一段作为摘录。 这用于显示文章内容的预览。
 	if len(md.Excerpt) == 0 {
 		paragraphs := articleContent.Find("p").First()
@@ -235,7 +238,10 @@ func (read *Readability) fixRelativeUris(articleContent *goquery.Selection) {
 		}
 	}
 	articleContent.Find("a").Each(func(i int, a *goquery.Selection) {
-		href, has := a.Attr("href")
+		href, has := a.Attr("data-href")
+		if !has {
+			href, has = a.Attr("href")
+		}
 		if has {
 			if strings.HasPrefix(href, "javascript:") {
 				a.Get(0).Type = html.TextNode
@@ -246,7 +252,10 @@ func (read *Readability) fixRelativeUris(articleContent *goquery.Selection) {
 		}
 	})
 	articleContent.Find("img").Each(func(i int, img *goquery.Selection) {
-		src, has := img.Attr("src")
+		src, has := img.Attr("data-src")
+		if !has {
+			src, has = img.Attr("src")
+		}
 		if has {
 			img.SetAttr("src", toAbsoluteURI(src))
 		}
@@ -1356,14 +1365,14 @@ func (read *Readability) prepDocument() {
 	// 将所有的font替换成span
 	read.replaceSelectionTags(read.dom.Find("font"), "span")
 
-	// 清除所有注释节点
-	removeComments(read.dom.Get(0))
 }
 
 // 清除所有注释节点
-func removeComments(pNode *html.Node) {
+func removeCommentsAndUnusedAttr(pNode *html.Node) {
 	for pNode != nil {
 		tmp := pNode
+
+		// 移除所有注释
 		if pNode.Type == html.CommentNode {
 			tmp = pNode.NextSibling
 			if tmp == nil {
@@ -1373,6 +1382,20 @@ func removeComments(pNode *html.Node) {
 			pNode = tmp
 			continue
 		}
+
+		// 移除除常用attr之外的attr
+		deleted := 0
+		if pNode.Type == html.ElementNode {
+			for i, attr := range pNode.Attr {
+				j := i - deleted
+				if _, has := map[string]struct{}{"id": {}, "src": {}, "href": {},
+					"title": {}, "alt": {}, "target": {}}[attr.Key]; !has {
+					pNode.Attr = pNode.Attr[:j+copy(pNode.Attr[j:], pNode.Attr[j+1:])]
+					deleted++
+				}
+			}
+		}
+
 		pNode = tmp.FirstChild
 		if pNode != nil {
 			continue
