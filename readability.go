@@ -455,7 +455,7 @@ func (read *Readability) grabArticle() *goquery.Selection {
 		// 在我们计算出分数后，循环遍历我们找到的所有可能的候选节点，并找到分数最高的候选节点。
 		topCandidates := make([]*goquery.Selection, 0)
 		for _, candidate := range candidates {
-			candidateScore := 0.00
+			var candidateScore float64
 			// 根据链接密度缩放最终候选人分数。 良好的内容应该有一个相对较小的链接密度（5％或更少），并且大多不受此操作的影响。
 			candidateScore = read.scoreList[candidate.Get(0)] * (1 - getLinkDensity(candidate))
 			read.scoreList[candidate.Get(0)] = candidateScore
@@ -767,7 +767,7 @@ func (read *Readability) prepArticle(s *goquery.Selection) {
 		h2 = h2.First()
 		lengthSimilarRate := float64(len(h2.Text())-len(read.article.Title)) / float64(len(read.article.Title))
 		if math.Abs(lengthSimilarRate) < 0.5 {
-			var titlesMatch = false
+			var titlesMatch bool
 			if lengthSimilarRate > 0 {
 				titlesMatch = strings.Contains(h2.Text(), read.article.Title)
 			} else {
@@ -1348,13 +1348,15 @@ func (read *Readability) getArticleTitle() string {
 			i := strings.LastIndex(originTitle, "：")
 			if i == -1 {
 				i = strings.LastIndex(originTitle, ":")
-			} else {
+			}
+			if i != -1 {
 				title = originTitle[i:]
 				if utf8.RuneCountInString(title) < 3 {
 					i = strings.Index(originTitle, "：")
 					if i == -1 {
 						i = strings.Index(originTitle, ":")
-					} else {
+					}
+					if i != -1 {
 						title = originTitle[i:]
 					}
 				} else if utf8.RuneCountInString(originTitle[0:i]) > 5 {
