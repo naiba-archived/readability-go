@@ -15,7 +15,6 @@ func TestParse(t *testing.T) {
 	pageUrls := []string{
 		"https://www.jianshu.com/p/725c7dc55d58",
 		"http://politics.people.com.cn/n1/2018/0612/c1001-30051069.html",
-		"http://www.xinhuanet.com/politics/2018-07/16/c_1123129685.htm",
 	}
 	for page := 0; page < len(pageUrls); page++ {
 		resp, err := http.Get(pageUrls[page])
