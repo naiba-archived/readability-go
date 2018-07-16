@@ -55,7 +55,7 @@ var (
 	}
 	bylinePattern               = regexp.MustCompile(`(?i)byline|author|dateline|writtenby|p-author`)
 	okMaybeItsACandidatePattern = regexp.MustCompile(`(?i)and|article|body|column|main|shadow|app|container`)
-	unlikelyCandidatesPattern   = regexp.MustCompile(`(?i)banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
+	unlikelyCandidatesPattern   = regexp.MustCompile(`(?i)-ad-|banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
 	negativePattern             = regexp.MustCompile(`(?i)hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
 	positivePattern             = regexp.MustCompile(`(?i)article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
 	videoLinkPattern            = regexp.MustCompile(`(?i)\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.youku|v\.qq)\.com`)
