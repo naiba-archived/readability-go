@@ -4,5 +4,5 @@
 
 Go version of the web page extraction algorithm.
 
-- [PHP](https://github.com/feelinglucky/php-readability) part
-- [JavaScript](https://github.com/mozilla/readability) part
+- [PHP](https://github.com/feelinglucky/php-readability)
+- [JavaScript](https://github.com/mozilla/readability)
