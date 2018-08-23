@@ -58,7 +58,7 @@ var (
 	unlikelyCandidatesPattern   = regexp.MustCompile(`(?i)-ad-|banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|foot|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote`)
 	negativePattern             = regexp.MustCompile(`(?i)hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|tool|widget`)
 	positivePattern             = regexp.MustCompile(`(?i)article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story`)
-	videoLinkPattern            = regexp.MustCompile(`(?i)\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.youku|v\.qq)\.com`)
+	videoLinkPattern            = regexp.MustCompile(`(?i)\/\/(www\.)?((dailymotion|youtube|youtube-nocookie|player\.vimeo|v\.qq)\.com|(archive|upload\.wikimedia)\.org|player\.twitch\.tv)`)
 	sharePattern                = regexp.MustCompile(`(?i)share`)
 	flags                       = map[int]bool{flagStripUnlikely: true, flagCleanConditionally: true, flagWeightClasses: true}
 	presentationalAttributes    = []string{"align", "background", "bgcolor", "border", "cellpadding", "cellspacing", "frame", "hspace", "rules", "style", "valign", "vspace"}
