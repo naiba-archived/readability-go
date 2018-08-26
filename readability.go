@@ -1276,7 +1276,7 @@ func (read *Readability) getArticleMetadata() metadata {
 			if matches = propertyPattern.FindAllString(elementProperty, 0); len(matches) > 0 {
 				for index := len(matches) - 1; index >= 0; index-- {
 					replacer, _ := regexp.Compile(`\s`)
-					name = string(replacer.ReplaceAll([]byte(matches[index]), []byte()))
+					name = string(replacer.ReplaceAll([]byte(matches[index]), []byte("")))
 					values[name] = ts(content)
 				}
 			}
@@ -1287,11 +1287,12 @@ func (read *Readability) getArticleMetadata() metadata {
 			if hasContent {
 				replacer, _ := regexp.Compile(`\.`)
 				name = string(replacer.ReplaceAll([]byte(normalizeSpace(strings.ToLower(name))), []byte(":")))
-				values[name] = ts(elementContent)
+				values[name] = ts(content)
 			}
 		}
 	})
 
+	var has bool
 	md.Title, has = values["dc:title"]
 	if !has {
 		md.Title, has = values["dcterm:title"]
