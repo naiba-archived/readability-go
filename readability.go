@@ -1261,53 +1261,78 @@ func (read *Readability) getArticleMetadata() metadata {
 	var md metadata
 	values := make(map[string]string)
 
-	namePattern := regexp.MustCompile(`^\s*((twitter)\s*:\s*)?(description|title)\s*$`)
-	propertyPattern := regexp.MustCompile(`^\s*og\s*:\s*(description|title)\s*$`)
+	propertyPattern := regexp.MustCompile(`\s*(dc|dcterm|og|twitter)\s*:\s*(author|creator|description|title)\s*`)
+	namePattern := regexp.MustCompile(`^\s*(?:(dc|dcterm|og|twitter)\s*[\.:]\s*)?(author|creator|description|title)\s*$`)
 
 	// 提取元数据
 	read.dom.Find("meta").Each(func(i int, s *goquery.Selection) {
-		elementName, _ := s.Attr("name")
-		elementProperty, _ := s.Attr("property")
-
-		if _, has := map[string]string{elementName: "", elementProperty: ""}["author"]; has {
-			md.Byline, _ = s.Attr("content")
-		}
-
+		elementName, hasElName := s.Attr("name")
+		elementProperty, has := s.Attr("property")
+		content, hasContent := s.Attr("content")
 		var name string
-		if namePattern.MatchString(elementName) {
-			name = elementName
-		} else if propertyPattern.MatchString(elementProperty) {
-			name = elementProperty
+		var matches []string
+
+		if has {
+			if matches = propertyPattern.FindAllString(elementProperty, 0); len(matches) > 0 {
+				for index := len(matches) - 1; index >= 0; index-- {
+					replacer, _ := regexp.Compile(`\s`)
+					name = string(replacer.ReplaceAll([]byte(matches[index]), []byte()))
+					values[name] = ts(content)
+				}
+			}
 		}
 
-		if len(name) > 0 {
-			elementContent, _ := s.Attr("content")
-			if len(elementContent) > 0 {
-				name = normalizeSpace(strings.ToLower(name))
+		if len(matches) == 0 && hasElName && namePattern.MatchString(elementName) {
+			name = elementName
+			if hasContent {
+				replacer, _ := regexp.Compile(`\.`)
+				name = string(replacer.ReplaceAll([]byte(normalizeSpace(strings.ToLower(name))), []byte(":")))
 				values[name] = ts(elementContent)
 			}
 		}
 	})
 
-	// 取文章摘要
-	if val, has := values["description"]; has {
-		md.Excerpt = val
-	} else if val, has := values["og:description"]; has {
-		md.Excerpt = val
-	} else if val, has := values["twitter:description"]; has {
-		md.Excerpt = val
+	md.Title, has = values["dc:title"]
+	if !has {
+		md.Title, has = values["dcterm:title"]
+	}
+	if !has {
+		md.Title, has = values["og:title"]
+	}
+	if !has {
+		md.Title, has = values["title"]
+	}
+	if !has {
+		md.Title, has = values["twitter:title"]
 	}
 
 	// 取网页标题
-	md.Title = read.getArticleTitle()
-	if len(md.Title) < 1 {
-		if val, has := values["og:title"]; has {
-			md.Title = val
-		} else if val, has := values["twitter:title"]; has {
-			md.Title = val
-		}
+	if len(md.Title) == 0 {
+		md.Title = read.getArticleTitle()
 	}
 
+	// get author
+	md.Byline, has = values["dc:creator"]
+	if !has {
+		md.Byline, has = values["dcterm:creator"]
+	}
+	if !has {
+		md.Byline, has = values["author"]
+	}
+	// get description
+	md.Excerpt, has = values["dc:description"]
+	if !has {
+		md.Excerpt, has = values["dcterm:description"]
+	}
+	if !has {
+		md.Excerpt, has = values["og:description"]
+	}
+	if !has {
+		md.Excerpt, has = values["description"]
+	}
+	if !has {
+		md.Excerpt, has = values["twitter:description"]
+	}
 	return md
 }
 
