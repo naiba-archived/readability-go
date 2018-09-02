@@ -1262,7 +1262,7 @@ func (read *Readability) getArticleMetadata() metadata {
 	values := make(map[string]string)
 
 	propertyPattern := regexp.MustCompile(`\s*(dc|dcterm|og|twitter)\s*:\s*(author|creator|description|title)\s*`)
-	namePattern := regexp.MustCompile(`^\s*(?:(dc|dcterm|og|twitter)\s*[\.:]\s*)?(author|creator|description|title)\s*$`)
+	namePattern := regexp.MustCompile(`^\s*(?:(dc|dcterm|og|twitter|weibo:(article|webpage))\s*[\.:]\s*)?(author|creator|description|title)\s*$`)
 
 	// 提取元数据
 	read.dom.Find("meta").Each(func(i int, s *goquery.Selection) {
@@ -1301,6 +1301,12 @@ func (read *Readability) getArticleMetadata() metadata {
 		md.Title, has = values["og:title"]
 	}
 	if !has {
+		md.Title, has = values["weibo:article:title"]
+	}
+	if !has {
+		md.Title, has = values["weibo:webpage:title"]
+	}
+	if !has {
 		md.Title, has = values["title"]
 	}
 	if !has {
@@ -1327,6 +1333,12 @@ func (read *Readability) getArticleMetadata() metadata {
 	}
 	if !has {
 		md.Excerpt, has = values["og:description"]
+	}
+	if !has {
+		md.Excerpt, has = values["weibo:article:description"]
+	}
+	if !has {
+		md.Excerpt, has = values["weibo:webpage:description"]
 	}
 	if !has {
 		md.Excerpt, has = values["description"]
