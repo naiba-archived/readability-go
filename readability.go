@@ -27,7 +27,7 @@ import (
 
 var (
 	chardetor          = chardet.NewHtmlDetector()
-	titleSplitPattern  = regexp.MustCompile(`([^\|\-\\\/>»«<]{1,})([\|\-\\\/>»«<]{1,}[^\|\-\\\/>»«<]{1,})*`)
+	titleSplitPattern  = regexp.MustCompile(`([^\|_\-\\\/>»«<]{1,})([\|_\-\\\/>»«<]{1,}[^\|_\-\\\/>»«<]{1,})*`)
 	whitespacePattern  = regexp.MustCompile(`\s{2,}`)
 	defaultTagsToScore = map[string]struct{}{
 		"section": {},
