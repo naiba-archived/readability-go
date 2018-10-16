@@ -13,8 +13,9 @@ import (
 
 func TestParse(t *testing.T) {
 	pageUrls := []string{
-		"https://www.jianshu.com/p/725c7dc55d58",
+		"http://news.youth.cn/sz/201810/t20181016_11755617.htm",
 		"http://politics.people.com.cn/n1/2018/0612/c1001-30051069.html",
+		"https://www.jianshu.com/p/725c7dc55d58",
 	}
 	for page := 0; page < len(pageUrls); page++ {
 		resp, err := http.Get(pageUrls[page])
@@ -30,6 +31,7 @@ func TestParse(t *testing.T) {
 			panic(err)
 		} else {
 			t.Log("标题", article.Title)
+			t.Log("正文", article.Content)
 		}
 		resp.Body.Close()
 	}
